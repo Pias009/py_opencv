@@ -15,6 +15,17 @@ RESULTS_INDEX = os.path.join(RESULTS_DIR, "index.json")
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
 
+def day_results_dir(started_at=None):
+    """Results folder for a run, grouped by the date it started: data/results/YYYY-MM-DD/.
+    Created up front so a run that errors or is cancelled before finishing still has
+    somewhere to save its partial result.
+    """
+    day = time.strftime("%Y-%m-%d", time.localtime(started_at or time.time()))
+    path = os.path.join(RESULTS_DIR, day)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
 def load_history():
     if not os.path.exists(RESULTS_INDEX):
         return []
@@ -183,6 +194,8 @@ def process_video(video_path, lines, min_width, min_height, show_window=False, c
         print("Press Ctrl+C to cancel.\n")
 
     job_id = uuid.uuid4().hex
+    day_dir = day_results_dir()
+    day = os.path.basename(day_dir)
 
     def build_entry():
         return {
@@ -194,14 +207,17 @@ def process_video(video_path, lines, min_width, min_height, show_window=False, c
             "model_used": job.get("model_used"),
             "total_frames": job.get("total_frames", 0),
             "status": job.get("status", "running"),
+            "error": job.get("error"),
             "started_at": job.get("started_at"),
             "finished_at": job.get("finished_at"),
             "duration_sec": round((job.get("finished_at", 0) - job.get("started_at", 0)), 2)
             if job.get("started_at") and job.get("finished_at") else None,
+            "date_dir": day,
         }
 
-    pdf_path = os.path.join(RESULTS_DIR, f"{job_id}.pdf")
-    xlsx_path = os.path.join(RESULTS_DIR, f"{job_id}.xlsx")
+    json_path = os.path.join(day_dir, f"{job_id}.json")
+    pdf_path = os.path.join(day_dir, f"{job_id}.pdf")
+    xlsx_path = os.path.join(day_dir, f"{job_id}.xlsx")
 
     def refresh_reports():
         entry = build_entry()
@@ -270,30 +286,35 @@ def process_video(video_path, lines, min_width, min_height, show_window=False, c
 
     print()
 
-    if job["status"] == "error":
+    is_error = job["status"] == "error"
+    if is_error:
         print(f"Error: {job.get('error')}")
-        return
+    else:
+        status_word = {"finished": "Done", "cancelled": "Cancelled"}.get(job["status"], job["status"])
+        per_line = "  ".join(f"{name}(in:{v['in']}, out:{v['out']})" for name, v in job.get("lines", {}).items())
+        print(f"{status_word}. Total vehicles counted: {job.get('count', 0)}")
+        if per_line:
+            print(f"  {per_line}")
+        categories = job.get("categories", {})
+        if categories:
+            print("  By category:")
+            for name, n in sorted(categories.items(), key=lambda kv: -kv[1]):
+                print(f"    {name}: {n}")
 
-    status_word = {"finished": "Done", "cancelled": "Cancelled"}.get(job["status"], job["status"])
-    per_line = "  ".join(f"{name}(in:{v['in']}, out:{v['out']})" for name, v in job.get("lines", {}).items())
-    print(f"{status_word}. Total vehicles counted: {job.get('count', 0)}")
-    if per_line:
-        print(f"  {per_line}")
-    categories = job.get("categories", {})
-    if categories:
-        print("  By category:")
-        for name, n in sorted(categories.items(), key=lambda kv: -kv[1]):
-            print(f"    {name}: {n}")
-
+    # Always save whatever result exists, even on error or an incomplete/cancelled
+    # run, so partial progress is never silently lost.
     entry = build_entry()
     save_history_entry(entry)
-    with open(os.path.join(RESULTS_DIR, f"{job_id}.json"), "w") as f:
+    with open(json_path, "w") as f:
         json.dump(entry, f, indent=2)
-    print(f"Saved result to data/results/{job_id}.json")
+    print(f"Saved result to data/results/{day}/{job_id}.json")
+
+    if is_error:
+        return
 
     refresh_reports()
-    print(f"Saved PDF report to data/results/{job_id}.pdf")
-    print(f"Saved Excel report to data/results/{job_id}.xlsx\n")
+    print(f"Saved PDF report to data/results/{day}/{job_id}.pdf")
+    print(f"Saved Excel report to data/results/{day}/{job_id}.xlsx\n")
 
 
 def main():
@@ -312,11 +333,13 @@ def main():
                                   "'Name:x1,y1,x2,y2' (custom segment). Repeatable for multiple roads/directions, "
                                   "e.g. --line North:0.2 --line South:0.8 --line East:100,100,100,600")
         parser.add_argument("--box", nargs="?", const=40, type=int, default=None, metavar="MARGIN",
-                             help="Use a 4-sided North/South/West/East boundary box just inside the frame "
-                                  "edges instead of manual --line placement, so every vehicle entering or "
-                                  "leaving the visible scene from any side is caught (including near-camera "
-                                  "foreground traffic a single mid-frame line misses). Optional pixel margin "
-                                  "from the edge (default: 40). Ignored if --line is given.")
+                             help="Use a 4-sided North/South/West/East boundary box, centered in the frame "
+                                  "and sized by --box-scale, instead of manual --line placement, so all "
+                                  "lanes of an intersection cross it cleanly. Optional extra pixel margin "
+                                  "to shrink it further (default: 40). Ignored if --line is given.")
+        parser.add_argument("--box-scale", type=float, default=0.65, metavar="0-1",
+                             help="Size of the --box boundary box as a fraction of the frame's width/height, "
+                                  "centered in the frame. Default: 0.65 (about two-thirds of the frame, centered).")
         parser.add_argument("--min-width", type=int, default=40, help="Minimum contour width")
         parser.add_argument("--min-height", type=int, default=40, help="Minimum contour height")
         parser.add_argument("--no-window", action="store_true", help="Don't open a live video window")
@@ -356,7 +379,7 @@ def main():
         if args.line:
             lines = [parse_line_spec(spec, frame_w, frame_h) for spec in args.line]
         elif args.box is not None:
-            lines = box_lines(frame_w, frame_h, margin=args.box)
+            lines = box_lines(frame_w, frame_h, margin=args.box, scale=args.box_scale)
         else:
             lines = default_lines(frame_w, frame_h) if args.line_pos == 0.45 else \
                 [parse_line_spec(f"Line1:{args.line_pos}", frame_w, frame_h)]
@@ -387,11 +410,12 @@ def main():
 
             show_window = prompt_yes_no("Open a live video window while scanning?", default=True)
             use_box = prompt_yes_no(
-                "Use a 4-sided North/South/West/East boundary box around the whole frame "
-                "(catches every vehicle entering/leaving the visible scene)?", default=False)
+                "Use a 4-sided North/South/West/East boundary box centered in the frame "
+                "(catches every lane of an intersection cleanly)?", default=False)
             if use_box:
-                margin = prompt_int("Margin from frame edge (px)", 40)
-                lines = box_lines(frame_w, frame_h, margin=margin)
+                box_scale = prompt_float("Box size as a fraction of frame (0-1, centered)", 0.65)
+                margin = prompt_int("Extra margin to shrink it further (px)", 0)
+                lines = box_lines(frame_w, frame_h, margin=margin, scale=box_scale)
             else:
                 multi = prompt_yes_no("Track multiple roads/directions (e.g. a 4-way intersection)?", default=False)
                 if multi:

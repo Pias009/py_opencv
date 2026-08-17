@@ -48,17 +48,28 @@ def default_lines(frame_w, frame_h):
     return [CountingLine("Line1", 25, y, frame_w - 25, y)]
 
 
-def box_lines(frame_w, frame_h, margin=40):
-    """Four lines forming a boundary box just inside the frame edges (North/South/
-    West/East), so every vehicle entering or leaving the visible scene from any side
-    is caught, including foreground/background traffic a single mid-frame line misses.
+def box_lines(frame_w, frame_h, margin=40, scale=0.65):
+    """Four lines forming a small boundary box centered in the frame (North/South/
+    West/East), sized at `scale` fraction of the frame's width/height, so all four
+    approaches of an intersection cross it cleanly instead of chasing the far frame
+    edges (which are often skewed or out of view for one or more lanes).
+
+    margin: kept for backward compatibility / fine nudging, applied on top of the
+            centered box (shrinks it further if > 0).
+    scale: fraction (0-1) of frame width/height the box spans, centered in the frame.
+           Default 0.65 = a box about two-thirds of the frame's size, centered.
     """
-    m = margin
+    box_w = frame_w * scale
+    box_h = frame_h * scale
+    x1 = int((frame_w - box_w) / 2) + margin
+    y1 = int((frame_h - box_h) / 2) + margin
+    x2 = int((frame_w + box_w) / 2) - margin
+    y2 = int((frame_h + box_h) / 2) - margin
     return [
-        CountingLine("North", m, m, frame_w - m, m),
-        CountingLine("South", m, frame_h - m, frame_w - m, frame_h - m),
-        CountingLine("West", m, m, m, frame_h - m),
-        CountingLine("East", frame_w - m, m, frame_w - m, frame_h - m),
+        CountingLine("North", x1, y1, x2, y1),
+        CountingLine("South", x1, y2, x2, y2),
+        CountingLine("West", x1, y1, x1, y2),
+        CountingLine("East", x2, y1, x2, y2),
     ]
 
 

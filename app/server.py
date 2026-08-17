@@ -14,6 +14,17 @@ UPLOAD_DIR = os.path.join(BASE_DIR, "data", "uploads")
 RESULTS_DIR = os.path.join(BASE_DIR, "data", "results")
 RESULTS_INDEX = os.path.join(RESULTS_DIR, "index.json")
 
+
+def day_results_dir(started_at=None):
+    """Results folder for a run, grouped by the date it started: data/results/YYYY-MM-DD/.
+    Created up front so a run that errors or is cancelled before finishing still has
+    somewhere to save its partial result.
+    """
+    day = time.strftime("%Y-%m-%d", time.localtime(started_at or time.time()))
+    path = os.path.join(RESULTS_DIR, day)
+    os.makedirs(path, exist_ok=True)
+    return path
+
 ALLOWED_EXT = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -52,21 +63,27 @@ def job_worker(job_id, video_path, source_label, line_pos_pct, min_width, min_he
     run_counter(video_path, job, min_width=min_width, min_height=min_height,
                 line_pos_pct=line_pos_pct, frame_sink=frame_sink)
 
-    if job["status"] in ("finished", "cancelled"):
-        entry = {
-            "id": job_id,
-            "video": source_label,
-            "count": job.get("count", 0),
-            "total_frames": job.get("total_frames", 0),
-            "status": job["status"],
-            "started_at": job.get("started_at"),
-            "finished_at": job.get("finished_at"),
-            "duration_sec": round((job.get("finished_at", 0) - job.get("started_at", 0)), 2)
-            if job.get("started_at") and job.get("finished_at") else None,
-        }
-        save_history_entry(entry)
-        with open(os.path.join(RESULTS_DIR, f"{job_id}.json"), "w") as f:
-            json.dump(entry, f, indent=2)
+    # Always save a result, even if the run errored or was cancelled before
+    # finishing, so partial progress (frames processed, counts so far) isn't lost.
+    day_dir = day_results_dir(job.get("started_at"))
+    day = os.path.basename(day_dir)
+    entry = {
+        "id": job_id,
+        "video": source_label,
+        "count": job.get("count", 0),
+        "lines": job.get("lines", {}),
+        "total_frames": job.get("total_frames", 0),
+        "status": job.get("status", "error"),
+        "error": job.get("error"),
+        "started_at": job.get("started_at"),
+        "finished_at": job.get("finished_at"),
+        "duration_sec": round((job.get("finished_at", 0) - job.get("started_at", 0)), 2)
+        if job.get("started_at") and job.get("finished_at") else None,
+        "date_dir": day,
+    }
+    save_history_entry(entry)
+    with open(os.path.join(day_dir, f"{job_id}.json"), "w") as f:
+        json.dump(entry, f, indent=2)
 
 
 @app.route("/")
