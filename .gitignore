@@ -1,0 +1,21 @@
+venv/
+data/uploads/*
+data/results/*
+!data/uploads/.gitkeep
+!data/results/.gitkeep
+__pycache__/
+*.pyc
+
+# Claude Code local state
+.claude/
+
+# Video files (test footage, not source)
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.webm
+*.dav
+
+# Model weights (large binaries, fetched separately)
+models/*.pt

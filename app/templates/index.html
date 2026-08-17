@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vehicle Counter</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Vehicle Counter</h1>
+    <p class="sub">Point it at a video, watch it count crossings, results are saved automatically.</p>
+  </header>
+
+  <section class="card" id="setup-card">
+    <div class="field">
+      <label for="file-input">Upload a video</label>
+      <div id="drop-zone" class="drop-zone">
+        <p id="drop-zone-text">Drag &amp; drop a video here, or click to choose a file</p>
+        <input id="file-input" type="file" accept=".mp4,.avi,.mov,.mkv,.webm" hidden>
+      </div>
+    </div>
+
+    <details class="advanced">
+      <summary>Advanced settings</summary>
+      <div class="field-row">
+        <div class="field">
+          <label for="line-pos">Counting line position (0&ndash;1 of height)</label>
+          <input id="line-pos" type="number" min="0" max="1" step="0.05" value="0.45">
+        </div>
+        <div class="field">
+          <label for="min-width">Min box width (px)</label>
+          <input id="min-width" type="number" min="10" step="5" value="80">
+        </div>
+        <div class="field">
+          <label for="min-height">Min box height (px)</label>
+          <input id="min-height" type="number" min="10" step="5" value="80">
+        </div>
+      </div>
+    </details>
+
+    <button id="start-btn">Start Counting</button>
+    <p class="error" id="error-msg" hidden></p>
+  </section>
+
+  <section class="card" id="run-card" hidden>
+    <div class="run-header">
+      <h2 id="run-title">Processing&hellip;</h2>
+      <button id="cancel-btn" class="secondary">Cancel</button>
+    </div>
+    <img id="stream-img" alt="Live annotated video">
+    <div class="stats">
+      <div class="stat">
+        <span class="stat-label">Vehicle Count</span>
+        <span class="stat-value" id="stat-count">0</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Progress</span>
+        <span class="stat-value" id="stat-progress">0%</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Status</span>
+        <span class="stat-value" id="stat-status">&ndash;</span>
+      </div>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+  </section>
+
+  <section class="card">
+    <div class="history-header">
+      <h2>History</h2>
+      <button id="refresh-btn" class="secondary">Refresh</button>
+    </div>
+    <table id="history-table">
+      <thead>
+        <tr><th>When</th><th>Video</th><th>Count</th><th>Frames</th><th>Duration</th><th>Status</th></tr>
+      </thead>
+      <tbody id="history-body">
+        <tr><td colspan="6" class="empty">No runs yet</td></tr>
+      </tbody>
+    </table>
+  </section>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
