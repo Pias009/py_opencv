@@ -50,11 +50,16 @@ def render_progress(job, video_label):
     count = job.get("count", 0)
     lines = job.get("lines", {})
     categories = job.get("categories", {})
+    speed_mode = job.get("speed_mode")
+    reanalyzed = job.get("reanalyzed", 0)
     pct = (frame_idx / total * 100) if total else 0
 
     per_line = "  ".join(f"{name}[in:{v['in']} out:{v['out']}]" for name, v in lines.items())
     cat_str = "  ".join(f"{k}:{v}" for k, v in categories.items()) if categories else ""
-    suffix = f"] {pct:5.1f}%  frame {frame_idx}/{total}  total: {count}  {per_line}  {cat_str}   "
+    speed_str = f"speed:{speed_mode}" if speed_mode else ""
+    reanalyze_str = f"re-checked:{reanalyzed}" if reanalyzed else ""
+    suffix = (f"] {pct:5.1f}%  frame {frame_idx}/{total}  total: {count}  {per_line}  "
+              f"{cat_str}  {speed_str}  {reanalyze_str}   ")
     bar_width = max(10, min(40, term_width() - len(suffix) - 1))
     filled = int(bar_width * pct / 100)
     bar = "#" * filled + "-" * (bar_width - filled)
@@ -168,7 +173,7 @@ def prompt_lines(frame_w, frame_h):
 
 def process_video(video_path, lines, min_width, min_height, show_window=False, classify=False,
                    classify_every_frame=False, imgsz=640, detect_every=1, model_key=None,
-                   window_width=1280):
+                   window_width=1280, auto_speed=True):
     job = {
         "status": "starting",
         "cancel": False,
@@ -205,6 +210,8 @@ def process_video(video_path, lines, min_width, min_height, show_window=False, c
             "lines": job.get("lines", {}),
             "categories": job.get("categories", {}),
             "model_used": job.get("model_used"),
+            "final_speed_mode": job.get("speed_mode"),
+            "reanalyzed_count": job.get("reanalyzed", 0),
             "total_frames": job.get("total_frames", 0),
             "status": job.get("status", "running"),
             "error": job.get("error"),
@@ -238,7 +245,8 @@ def process_video(video_path, lines, min_width, min_height, show_window=False, c
     elif classify:
         from hybrid_counter import run_counter_hybrid as counter_fn, DEFAULT_MODEL_KEY
         extra_kwargs = {"min_width": min_width, "min_height": min_height,
-                         "model_key": model_key or DEFAULT_MODEL_KEY}
+                         "model_key": model_key or DEFAULT_MODEL_KEY,
+                         "auto_speed": auto_speed}
     else:
         counter_fn = run_counter
         extra_kwargs = {"min_width": min_width, "min_height": min_height}
@@ -365,6 +373,13 @@ def main():
                              help="Classification model: 'bnvd' (Bangladesh-specific, covers Rickshaw/CNG/"
                                   "Leguna/etc. — used automatically if downloaded) or 'coco' (standard "
                                   "YOLOv8: bicycle/motorcycle/car/bus/truck only). Default: bnvd if present.")
+        parser.add_argument("--no-auto-speed", action="store_true",
+                             help="For --classify: disable auto-speed. By default the classifier watches its "
+                                  "own throughput against the video's frame rate and automatically shrinks "
+                                  "the classification resolution on busy footage to keep up, then restores "
+                                  "full detail once it catches up. Every crossing is still always classified — "
+                                  "this only affects how much detail each classification pass uses, never "
+                                  "which crossings get checked. Pass this flag to always run at full detail.")
         args = parser.parse_args()
 
         if not os.path.isfile(args.video):
@@ -389,7 +404,8 @@ def main():
                       classify=args.classify or args.classify_every_frame,
                       classify_every_frame=args.classify_every_frame,
                       imgsz=args.imgsz, detect_every=args.detect_every,
-                      model_key=args.model, window_width=args.window_width)
+                      model_key=args.model, window_width=args.window_width,
+                      auto_speed=not args.no_auto_speed)
         show_history()
         return
 

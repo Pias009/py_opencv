@@ -8,15 +8,32 @@ const errorMsg = document.getElementById("error-msg");
 
 const setupCard = document.getElementById("setup-card");
 const runCard = document.getElementById("run-card");
+const reportCard = document.getElementById("report-card");
 const runTitle = document.getElementById("run-title");
 const streamImg = document.getElementById("stream-img");
 
-const statCount = document.getElementById("stat-count");
 const statProgress = document.getElementById("stat-progress");
-const statStatus = document.getElementById("stat-status");
+const statFrames = document.getElementById("stat-frames");
 const progressFill = document.getElementById("progress-fill");
 
+const sideTotal = document.getElementById("side-total");
+const sideStatus = document.getElementById("side-status");
+const sideLinesBlock = document.getElementById("side-lines-block");
+const lineRows = document.getElementById("line-rows");
+const sideCategoriesBlock = document.getElementById("side-categories-block");
+const categoryRows = document.getElementById("category-rows");
+const sideMetaBlock = document.getElementById("side-meta-block");
+const metaSpeed = document.getElementById("meta-speed");
+const metaReanalyzed = document.getElementById("meta-reanalyzed");
+const metaModel = document.getElementById("meta-model");
+
+const reportCountLabel = document.getElementById("report-count-label");
+const downloadPdf = document.getElementById("download-pdf");
+const downloadXlsx = document.getElementById("download-xlsx");
+
 const historyBody = document.getElementById("history-body");
+
+const LINE_COLORS = ["#4f8cff", "#ff7a45", "#3ddc84", "#ff5c5c", "#c084fc", "#facc15"];
 
 let currentJobId = null;
 let pollTimer = null;
@@ -41,13 +58,10 @@ async function startJob() {
   }
 
   startBtn.disabled = true;
-  startBtn.textContent = "Starting…";
+  startBtn.textContent = "Uploading…";
 
   const formData = new FormData();
   formData.append("file", file);
-  formData.append("line_pos", document.getElementById("line-pos").value);
-  formData.append("min_width", document.getElementById("min-width").value);
-  formData.append("min_height", document.getElementById("min-height").value);
 
   try {
     const res = await fetch("/api/start", { method: "POST", body: formData });
@@ -71,15 +85,56 @@ function resetStartBtn() {
 }
 
 function beginRunView() {
+  reportCard.hidden = true;
   runCard.hidden = false;
   runTitle.textContent = "Processing…";
   streamImg.src = `/api/stream/${currentJobId}?t=${Date.now()}`;
-  statCount.textContent = "0";
   statProgress.textContent = "0%";
-  statStatus.textContent = "starting";
+  statFrames.textContent = "";
   progressFill.style.width = "0%";
+
+  sideTotal.textContent = "0";
+  sideStatus.textContent = "Starting…";
+  sideStatus.classList.add("is-live");
+  sideLinesBlock.hidden = true;
+  sideCategoriesBlock.hidden = true;
+  sideMetaBlock.hidden = true;
+
   runCard.scrollIntoView({ behavior: "smooth", block: "start" });
   pollTimer = setInterval(pollStatus, 500);
+}
+
+function renderLines(lines) {
+  const entries = Object.entries(lines || {});
+  if (!entries.length) {
+    sideLinesBlock.hidden = true;
+    return;
+  }
+  sideLinesBlock.hidden = false;
+  lineRows.innerHTML = entries.map(([name, v], i) => `
+    <div class="line-row">
+      <span class="line-row-name">
+        <span class="line-dot" style="background:${LINE_COLORS[i % LINE_COLORS.length]}"></span>
+        ${escapeHtml(name)}
+      </span>
+      <span class="line-row-counts">in ${v.in} &middot; out ${v.out}</span>
+    </div>
+  `).join("");
+}
+
+function renderCategories(categories) {
+  const entries = Object.entries(categories || {}).sort((a, b) => b[1] - a[1]);
+  if (!entries.length) {
+    sideCategoriesBlock.hidden = true;
+    return;
+  }
+  sideCategoriesBlock.hidden = false;
+  categoryRows.innerHTML = entries.map(([name, count]) => `
+    <div class="category-row">
+      <span class="category-row-name">${escapeHtml(name)}</span>
+      <span class="category-row-count">${count}</span>
+    </div>
+  `).join("");
 }
 
 async function pollStatus() {
@@ -89,16 +144,38 @@ async function pollStatus() {
     const data = await res.json();
     if (!res.ok) return;
 
-    statCount.textContent = data.count;
+    sideTotal.textContent = data.count;
     statProgress.textContent = data.progress + "%";
-    statStatus.textContent = data.status;
+    statFrames.textContent = data.total_frames ? `frame ${data.frame_idx}/${data.total_frames}` : "";
     progressFill.style.width = data.progress + "%";
+
+    renderLines(data.lines);
+    renderCategories(data.categories);
+
+    if (data.speed_mode || data.reanalyzed) {
+      sideMetaBlock.hidden = false;
+      metaSpeed.textContent = data.speed_mode || "full";
+      metaReanalyzed.textContent = data.reanalyzed || 0;
+      metaModel.textContent = data.model_used || "–";
+    }
 
     if (data.done) {
       clearInterval(pollTimer);
       pollTimer = null;
-      runTitle.textContent = data.status === "finished" ? "Done" : "Stopped";
+      const ok = data.status === "finished";
+      runTitle.textContent = ok ? "Done" : (data.status === "cancelled" ? "Stopped" : "Error");
+      sideStatus.textContent = ok ? "Finished" : (data.status === "cancelled" ? "Cancelled" : (data.error || "Error"));
+      sideStatus.classList.remove("is-live");
       resetStartBtn();
+
+      if (ok && data.report_pdf) {
+        reportCountLabel.textContent = `${data.count} vehicles counted`;
+        downloadPdf.href = data.report_pdf;
+        downloadXlsx.href = data.report_xlsx;
+        reportCard.hidden = false;
+        reportCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+
       currentJobId = null;
       loadHistory();
     }

@@ -17,9 +17,20 @@ LINE_COLORS = [
 
 
 class CountingLine:
-    """A named line segment (x1,y1)-(x2,y2) vehicles are counted against."""
+    """A named line segment (x1,y1)-(x2,y2) vehicles are counted against.
 
-    def __init__(self, name, x1, y1, x2, y2):
+    inward_point: an optional (x, y) that "in" should point toward — e.g. an
+    intersection's center for a boundary-box line. Without it, the two
+    endpoints alone don't determine which side is "inward", so the normal's
+    sign is an arbitrary artifact of point order: on a 4-sided box built from
+    independent per-side coordinates, that arbitrary sign does NOT come out
+    consistent across sides (verified: North/East end up correct, South/West
+    inverted, for the same box). Passing inward_point makes "in" consistently
+    mean "toward that point" on every line, regardless of how its endpoints
+    were listed.
+    """
+
+    def __init__(self, name, x1, y1, x2, y2, inward_point=None):
         self.name = name
         self.x1, self.y1, self.x2, self.y2 = x1, y1, x2, y2
         self.in_count = 0
@@ -28,6 +39,14 @@ class CountingLine:
         length = (dx ** 2 + dy ** 2) ** 0.5 or 1.0
         # Unit normal to the line, used as the signed side/direction axis.
         self.nx, self.ny = -dy / length, dx / length
+
+        if inward_point is not None:
+            mx, my = (x1 + x2) / 2, (y1 + y2) / 2
+            ix, iy = inward_point
+            # If the normal currently points away from inward_point, flip it
+            # so "in" (side increasing) always means "toward inward_point".
+            if (ix - mx) * self.nx + (iy - my) * self.ny < 0:
+                self.nx, self.ny = -self.nx, -self.ny
 
     def signed_side(self, px, py):
         return (px - self.x1) * self.nx + (py - self.y1) * self.ny
@@ -65,24 +84,36 @@ def box_lines(frame_w, frame_h, margin=40, scale=0.65):
     y1 = int((frame_h - box_h) / 2) + margin
     x2 = int((frame_w + box_w) / 2) - margin
     y2 = int((frame_h + box_h) / 2) - margin
+    center = ((x1 + x2) / 2, (y1 + y2) / 2)
     return [
-        CountingLine("North", x1, y1, x2, y1),
-        CountingLine("South", x1, y2, x2, y2),
-        CountingLine("West", x1, y1, x1, y2),
-        CountingLine("East", x2, y1, x2, y2),
+        CountingLine("North", x1, y1, x2, y1, inward_point=center),
+        CountingLine("South", x1, y2, x2, y2, inward_point=center),
+        CountingLine("West", x1, y1, x1, y2, inward_point=center),
+        CountingLine("East", x2, y1, x2, y2, inward_point=center),
     ]
 
 
 class Track:
-    __slots__ = ("id", "cx", "cy", "prev_side", "missed", "counted_lines")
+    __slots__ = ("id", "cx", "cy", "vx", "vy", "prev_side", "missed", "counted_lines")
 
     def __init__(self, track_id, cx, cy):
         self.id = track_id
         self.cx = cx
         self.cy = cy
+        self.vx = 0.0              # px/frame, smoothed
+        self.vy = 0.0
         self.prev_side = {}       # line name -> last signed side value
         self.missed = 0
         self.counted_lines = set()  # line names already counted for this track
+
+    def predicted_pos(self):
+        """Where this track should be next frame, assuming constant velocity.
+        Used to match against detections instead of last-known position, so
+        fast-moving or briefly-occluded vehicles don't drift outside the
+        matching radius and get mistaken for a new track (which would miss
+        their line crossing) or swap identity with a nearby vehicle.
+        """
+        return self.cx + self.vx, self.cy + self.vy
 
 
 def pega_centro(x, y, w, h):
@@ -180,28 +211,50 @@ def run_counter(video_source, job, min_width=LARGURA_MIN, min_height=ALTURA_MIN,
             if w >= min_width and h >= min_height and cv2.contourArea(c) >= (min_width * min_height * 0.5):
                 detections.append((x, y, w, h))
 
-        # Match detections to existing tracks by nearest centroid (greedy).
-        unmatched_tracks = list(range(len(tracks)))
-        unmatched_detections = list(range(len(detections)))
-        matches = []
-
-        for ti in list(unmatched_tracks):
-            best_di = None
-            best_dist = MAX_TRACK_DISTANCE
-            tr = tracks[ti]
-            for di in unmatched_detections:
-                x, y, w, h = detections[di]
+        # Match detections to existing tracks by nearest centroid to each
+        # track's *predicted* position (constant-velocity extrapolation), not
+        # its last-known one. A vehicle moving fast enough to travel more than
+        # MAX_TRACK_DISTANCE in one frame would otherwise fall outside the
+        # search radius, get treated as a brand-new track, and silently lose
+        # its line-crossing history — this is the single biggest source of
+        # missed/duplicate counts on fast traffic. Matching is also resolved
+        # globally-greedy (best pair first, across all track/detection pairs)
+        # rather than track-by-list-order, so two vehicles passing close
+        # together near a line are less likely to swap identities.
+        candidates = []
+        for ti, tr in enumerate(tracks):
+            pred_x, pred_y = tr.predicted_pos()
+            # A track that's been coasting on prediction (missed detections)
+            # gets a wider search radius per missed frame, since its last
+            # real position is stale and its predicted one carries more
+            # uncertainty the longer it's gone unseen.
+            radius = MAX_TRACK_DISTANCE * (1 + 0.5 * tr.missed)
+            for di, (x, y, w, h) in enumerate(detections):
                 dcx, dcy = pega_centro(x, y, w, h)
-                dist = ((tr.cx - dcx) ** 2 + (tr.cy - dcy) ** 2) ** 0.5
-                if dist < best_dist:
-                    best_dist = dist
-                    best_di = di
-            if best_di is not None:
-                matches.append((ti, best_di))
-                unmatched_tracks.remove(ti)
-                unmatched_detections.remove(best_di)
+                dist = ((pred_x - dcx) ** 2 + (pred_y - dcy) ** 2) ** 0.5
+                if dist < radius:
+                    candidates.append((dist, ti, di))
+        candidates.sort(key=lambda c: c[0])
+
+        matched_tracks, matched_detections = set(), set()
+        matches = []
+        for dist, ti, di in candidates:
+            if ti in matched_tracks or di in matched_detections:
+                continue
+            matches.append((ti, di))
+            matched_tracks.add(ti)
+            matched_detections.add(di)
+
+        unmatched_tracks = [ti for ti in range(len(tracks)) if ti not in matched_tracks]
+        unmatched_detections = [di for di in range(len(detections)) if di not in matched_detections]
 
         def update_track(tr, cx, cy, box):
+            # Smooth (exponential moving average) the velocity estimate so a
+            # single noisy detection doesn't swing the prediction wildly.
+            new_vx, new_vy = cx - tr.cx, cy - tr.cy
+            tr.vx = 0.6 * new_vx + 0.4 * tr.vx
+            tr.vy = 0.6 * new_vy + 0.4 * tr.vy
+
             for ln in lines:
                 side = ln.signed_side(cx, cy)
                 prev = tr.prev_side.get(ln.name)

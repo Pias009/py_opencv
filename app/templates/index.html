@@ -7,80 +7,114 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <h1>Vehicle Counter</h1>
-    <p class="sub">Point it at a video, watch it count crossings, results are saved automatically.</p>
-  </header>
-
-  <section class="card" id="setup-card">
-    <div class="field">
-      <label for="file-input">Upload a video</label>
-      <div id="drop-zone" class="drop-zone">
-        <p id="drop-zone-text">Drag &amp; drop a video here, or click to choose a file</p>
-        <input id="file-input" type="file" accept=".mp4,.avi,.mov,.mkv,.webm" hidden>
+<!--
+THESIS: an operator console, not a form-then-results page — the live count sits
+beside the video the whole time, the way a real traffic-monitoring desk works.
+OWN-WORLD: inherits the existing dark dashboard system unchanged (#0f1115 bg,
+#171a21 cards, blue/orange accent, uppercase stat labels, 12px card radius).
+STORY: operator drops a video in, watches per-direction and per-vehicle-type
+counts climb live next to the playing preview, downloads the report when done.
+FIRST VIEWPORT: fixed-width left sidebar (live totals, per-line, per-category)
++ main stage (upload dropzone that becomes the video preview) — desktop;
+sidebar stacks above the stage on narrow viewports.
+FORM: sidebar console / dashboard pattern, extending the established card system.
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+-->
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div>
+        <h1>Vehicle Counter</h1>
+        <p class="brand-sub">Live traffic analysis</p>
       </div>
     </div>
 
-    <details class="advanced">
-      <summary>Advanced settings</summary>
-      <div class="field-row">
-        <div class="field">
-          <label for="line-pos">Counting line position (0&ndash;1 of height)</label>
-          <input id="line-pos" type="number" min="0" max="1" step="0.05" value="0.45">
+    <div class="side-block">
+      <span class="side-label">Total counted</span>
+      <span class="side-total" id="side-total">0</span>
+      <span class="side-status" id="side-status">Waiting for a video&hellip;</span>
+    </div>
+
+    <div class="side-block" id="side-lines-block" hidden>
+      <span class="side-label">By direction</span>
+      <div class="line-rows" id="line-rows"></div>
+    </div>
+
+    <div class="side-block" id="side-categories-block" hidden>
+      <span class="side-label">By vehicle type</span>
+      <div class="category-rows" id="category-rows"></div>
+    </div>
+
+    <div class="side-block" id="side-meta-block" hidden>
+      <span class="side-label">Engine</span>
+      <div class="meta-row"><span>Speed</span><span id="meta-speed">full</span></div>
+      <div class="meta-row"><span>Re-checked</span><span id="meta-reanalyzed">0</span></div>
+      <div class="meta-row"><span>Model</span><span id="meta-model">&ndash;</span></div>
+    </div>
+  </aside>
+
+  <main class="stage">
+    <section class="card" id="setup-card">
+      <div class="field">
+        <label for="file-input">Upload a video</label>
+        <div id="drop-zone" class="drop-zone">
+          <p id="drop-zone-text">Drag &amp; drop a video here, or click to choose a file</p>
+          <input id="file-input" type="file" accept=".mp4,.avi,.mov,.mkv,.webm" hidden>
         </div>
-        <div class="field">
-          <label for="min-width">Min box width (px)</label>
-          <input id="min-width" type="number" min="10" step="5" value="80">
-        </div>
-        <div class="field">
-          <label for="min-height">Min box height (px)</label>
-          <input id="min-height" type="number" min="10" step="5" value="80">
-        </div>
       </div>
-    </details>
+      <button id="start-btn">Start Counting</button>
+      <p class="error" id="error-msg" hidden></p>
+    </section>
 
-    <button id="start-btn">Start Counting</button>
-    <p class="error" id="error-msg" hidden></p>
-  </section>
+    <section class="card" id="run-card" hidden>
+      <div class="run-header">
+        <h2 id="run-title">Processing&hellip;</h2>
+        <button id="cancel-btn" class="secondary">Cancel</button>
+      </div>
+      <img id="stream-img" alt="Live annotated video">
+      <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+      <div class="progress-caption">
+        <span id="stat-progress">0%</span>
+        <span id="stat-frames"></span>
+      </div>
+    </section>
 
-  <section class="card" id="run-card" hidden>
-    <div class="run-header">
-      <h2 id="run-title">Processing&hellip;</h2>
-      <button id="cancel-btn" class="secondary">Cancel</button>
-    </div>
-    <img id="stream-img" alt="Live annotated video">
-    <div class="stats">
-      <div class="stat">
-        <span class="stat-label">Vehicle Count</span>
-        <span class="stat-value" id="stat-count">0</span>
+    <section class="card" id="report-card" hidden>
+      <div class="report-header">
+        <h2>Report ready</h2>
+        <span class="report-count" id="report-count-label"></span>
       </div>
-      <div class="stat">
-        <span class="stat-label">Progress</span>
-        <span class="stat-value" id="stat-progress">0%</span>
+      <p class="report-sub">Download the finished report to share or file.</p>
+      <div class="report-actions">
+        <a id="download-pdf" class="download-btn" href="#" download>
+          <span class="download-icon" aria-hidden="true">PDF</span>
+          <span>Download PDF report</span>
+        </a>
+        <a id="download-xlsx" class="download-btn download-btn-alt" href="#" download>
+          <span class="download-icon" aria-hidden="true">XLS</span>
+          <span>Download Excel report</span>
+        </a>
       </div>
-      <div class="stat">
-        <span class="stat-label">Status</span>
-        <span class="stat-value" id="stat-status">&ndash;</span>
-      </div>
-    </div>
-    <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
-  </section>
+    </section>
 
-  <section class="card">
-    <div class="history-header">
-      <h2>History</h2>
-      <button id="refresh-btn" class="secondary">Refresh</button>
-    </div>
-    <table id="history-table">
-      <thead>
-        <tr><th>When</th><th>Video</th><th>Count</th><th>Frames</th><th>Duration</th><th>Status</th></tr>
-      </thead>
-      <tbody id="history-body">
-        <tr><td colspan="6" class="empty">No runs yet</td></tr>
-      </tbody>
-    </table>
-  </section>
+    <section class="card">
+      <div class="history-header">
+        <h2>History</h2>
+        <button id="refresh-btn" class="secondary">Refresh</button>
+      </div>
+      <div class="table-scroll">
+        <table id="history-table">
+          <thead>
+            <tr><th>When</th><th>Video</th><th>Count</th><th>Frames</th><th>Duration</th><th>Status</th></tr>
+          </thead>
+          <tbody id="history-body">
+            <tr><td colspan="6" class="empty">No runs yet</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
 </div>
 
 <script src="/static/app.js"></script>

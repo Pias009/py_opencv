@@ -7,23 +7,12 @@ import uuid
 from flask import Flask, Response, jsonify, render_template, request, send_from_directory
 from werkzeug.utils import secure_filename
 
-from counter import run_counter
+from counter import box_lines
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 UPLOAD_DIR = os.path.join(BASE_DIR, "data", "uploads")
 RESULTS_DIR = os.path.join(BASE_DIR, "data", "results")
 RESULTS_INDEX = os.path.join(RESULTS_DIR, "index.json")
-
-
-def day_results_dir(started_at=None):
-    """Results folder for a run, grouped by the date it started: data/results/YYYY-MM-DD/.
-    Created up front so a run that errors or is cancelled before finishing still has
-    somewhere to save its partial result.
-    """
-    day = time.strftime("%Y-%m-%d", time.localtime(started_at or time.time()))
-    path = os.path.join(RESULTS_DIR, day)
-    os.makedirs(path, exist_ok=True)
-    return path
 
 ALLOWED_EXT = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
 
@@ -34,6 +23,14 @@ app = Flask(__name__)
 
 jobs = {}
 jobs_lock = threading.Lock()
+
+
+def day_results_dir(started_at=None):
+    """Results folder for a run, grouped by the date it started: data/results/YYYY-MM-DD/."""
+    day = time.strftime("%Y-%m-%d", time.localtime(started_at or time.time()))
+    path = os.path.join(RESULTS_DIR, day)
+    os.makedirs(path, exist_ok=True)
+    return path
 
 
 def load_history():
@@ -57,21 +54,16 @@ def make_frame_sink(job):
     return sink
 
 
-def job_worker(job_id, video_path, source_label, line_pos_pct, min_width, min_height):
-    job = jobs[job_id]
-    frame_sink = make_frame_sink(job)
-    run_counter(video_path, job, min_width=min_width, min_height=min_height,
-                line_pos_pct=line_pos_pct, frame_sink=frame_sink)
-
-    # Always save a result, even if the run errored or was cancelled before
-    # finishing, so partial progress (frames processed, counts so far) isn't lost.
-    day_dir = day_results_dir(job.get("started_at"))
-    day = os.path.basename(day_dir)
-    entry = {
+def build_entry(job_id, job, day):
+    return {
         "id": job_id,
-        "video": source_label,
+        "video": job.get("video"),
         "count": job.get("count", 0),
         "lines": job.get("lines", {}),
+        "categories": job.get("categories", {}),
+        "model_used": job.get("model_used"),
+        "final_speed_mode": job.get("speed_mode"),
+        "reanalyzed_count": job.get("reanalyzed", 0),
         "total_frames": job.get("total_frames", 0),
         "status": job.get("status", "error"),
         "error": job.get("error"),
@@ -81,9 +73,61 @@ def job_worker(job_id, video_path, source_label, line_pos_pct, min_width, min_he
         if job.get("started_at") and job.get("finished_at") else None,
         "date_dir": day,
     }
-    save_history_entry(entry)
-    with open(os.path.join(day_dir, f"{job_id}.json"), "w") as f:
+
+
+def refresh_reports(job_id, job, day_dir, day):
+    entry = build_entry(job_id, job, day)
+    json_path = os.path.join(day_dir, f"{job_id}.json")
+    with open(json_path, "w") as f:
         json.dump(entry, f, indent=2)
+    try:
+        from report import generate_report_pdf
+        generate_report_pdf(entry, os.path.join(day_dir, f"{job_id}.pdf"))
+    except Exception:
+        pass
+    try:
+        from excel_report import generate_report_xlsx
+        generate_report_xlsx(entry, os.path.join(day_dir, f"{job_id}.xlsx"))
+    except Exception:
+        pass
+    return entry
+
+
+def job_worker(job_id, video_path, source_label):
+    job = jobs[job_id]
+    frame_sink = make_frame_sink(job)
+
+    day_dir = day_results_dir()
+    day = os.path.basename(day_dir)
+
+    def refresh_loop():
+        while not job.get("done"):
+            refresh_reports(job_id, job, day_dir, day)
+            time.sleep(3)
+
+    threading.Thread(target=refresh_loop, daemon=True).start()
+
+    try:
+        import cv2
+        cap = cv2.VideoCapture(video_path)
+        frame_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        cap.release()
+        lines = box_lines(frame_w, frame_h, margin=40)
+
+        from hybrid_counter import run_counter_hybrid, DEFAULT_MODEL_KEY
+        run_counter_hybrid(video_path, job, lines=lines, frame_sink=frame_sink,
+                            model_key=DEFAULT_MODEL_KEY, auto_speed=True,
+                            min_width=60, min_height=60)
+    except Exception as e:
+        job["status"] = "error"
+        job["error"] = str(e)
+        job["done"] = True
+
+    day_dir = day_results_dir(job.get("started_at"))
+    day = os.path.basename(day_dir)
+    entry = refresh_reports(job_id, job, day_dir, day)
+    save_history_entry(entry)
 
 
 @app.route("/")
@@ -109,31 +153,26 @@ def api_start():
     unique_name = f"{uuid.uuid4().hex}_{filename}"
     save_path = os.path.join(UPLOAD_DIR, unique_name)
     f.save(save_path)
-    video_path = save_path
-    source_label = filename
-
-    data = request.form if request.form else (request.get_json(silent=True) or {})
-    line_pos_pct = float(data.get("line_pos", 0.45))
-    min_width = int(data.get("min_width", 80))
-    min_height = int(data.get("min_height", 80))
 
     job_id = uuid.uuid4().hex
     job = {
         "status": "starting",
-        "video": source_label,
+        "video": filename,
         "cancel": False,
         "done": False,
         "last_frame": None,
         "count": 0,
+        "lines": {},
+        "categories": {},
         "frame_idx": 0,
         "total_frames": 0,
+        "speed_mode": "full",
+        "reanalyzed": 0,
     }
     with jobs_lock:
         jobs[job_id] = job
 
-    t = threading.Thread(target=job_worker, args=(job_id, video_path, source_label,
-                                                    line_pos_pct, min_width, min_height),
-                          daemon=True)
+    t = threading.Thread(target=job_worker, args=(job_id, save_path, filename), daemon=True)
     t.start()
 
     return jsonify({"job_id": job_id})
@@ -147,14 +186,21 @@ def api_status(job_id):
     progress = 0
     if job.get("total_frames"):
         progress = round(100 * job.get("frame_idx", 0) / job["total_frames"], 1)
+    day = time.strftime("%Y-%m-%d", time.localtime(job.get("started_at") or time.time()))
     return jsonify({
         "status": job.get("status"),
         "count": job.get("count", 0),
+        "lines": job.get("lines", {}),
+        "categories": job.get("categories", {}),
+        "speed_mode": job.get("speed_mode"),
+        "reanalyzed": job.get("reanalyzed", 0),
         "frame_idx": job.get("frame_idx", 0),
         "total_frames": job.get("total_frames", 0),
         "progress": progress,
         "error": job.get("error"),
         "done": job.get("done", False),
+        "report_pdf": f"/api/report/{day}/{job_id}.pdf" if job.get("done") else None,
+        "report_xlsx": f"/api/report/{day}/{job_id}.xlsx" if job.get("done") else None,
     })
 
 
@@ -185,6 +231,12 @@ def api_stream(job_id):
             time.sleep(0.05)
 
     return Response(generate(), mimetype="multipart/x-mixed-replace; boundary=frame")
+
+
+@app.route("/api/report/<day>/<filename>")
+def api_report(day, filename):
+    day_dir = os.path.join(RESULTS_DIR, day)
+    return send_from_directory(day_dir, filename, as_attachment=True)
 
 
 if __name__ == "__main__":
