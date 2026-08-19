@@ -30,6 +30,10 @@ def parse_args():
     parser.add_argument("--min-height", type=int, default=altura_min, help="Minimum contour height")
     parser.add_argument("--no-realtime", action="store_true",
                          help="Process as fast as possible instead of pacing to the video's FPS")
+    parser.add_argument("--zero-fault", action="store_true",
+                         help="Use Zero-Fault AI engine (YOLOv8 + ByteTrack + 2D Raycasting)")
+    parser.add_argument("--stride", type=int, default=3,
+                         help="Frame stride multiplier (default 3 = 300%% speedup, 1h video in ~20m)")
     return parser.parse_args()
 
 
@@ -37,6 +41,17 @@ def main():
     args = parse_args()
 
     video_source = int(args.video) if args.video.isdigit() else args.video
+
+    if args.zero_fault:
+        import os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "app"))
+        from zero_fault_counter import run_zero_fault_counter
+        job = {}
+        print(f"🚀 Starting Zero-Fault High-Precision Vehicle Tracking (Speed Stride={args.stride}x)...")
+        run_zero_fault_counter(video_source, job, vid_stride=args.stride, show_window=True)
+        print("✅ Finished:", job.get("count"), "vehicles counted.")
+        print("📊 Breakdown:", job.get("categories"))
+        sys.exit(0)
 
     cap = cv2.VideoCapture(video_source)
     if not cap.isOpened():

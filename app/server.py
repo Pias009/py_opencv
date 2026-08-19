@@ -115,10 +115,9 @@ def job_worker(job_id, video_path, source_label):
         cap.release()
         lines = box_lines(frame_w, frame_h, margin=40)
 
-        from hybrid_counter import run_counter_hybrid, DEFAULT_MODEL_KEY
-        run_counter_hybrid(video_path, job, lines=lines, frame_sink=frame_sink,
-                            model_key=DEFAULT_MODEL_KEY, auto_speed=True,
-                            min_width=60, min_height=60)
+        from zero_fault_counter import run_zero_fault_counter
+        run_zero_fault_counter(video_path, job, lines=lines, model_key="bnvd",
+                               conf_threshold=0.35, imgsz=640, frame_sink=frame_sink)
     except Exception as e:
         job["status"] = "error"
         job["error"] = str(e)
@@ -187,6 +186,16 @@ def api_status(job_id):
     if job.get("total_frames"):
         progress = round(100 * job.get("frame_idx", 0) / job["total_frames"], 1)
     day = time.strftime("%Y-%m-%d", time.localtime(job.get("started_at") or time.time()))
+    report_pdf_url = None
+    report_xlsx_url = None
+    if job.get("done"):
+        pdf_path = os.path.join(RESULTS_DIR, day, f"{job_id}.pdf")
+        xlsx_path = os.path.join(RESULTS_DIR, day, f"{job_id}.xlsx")
+        if os.path.exists(pdf_path):
+            report_pdf_url = f"/api/report/{day}/{job_id}.pdf"
+        if os.path.exists(xlsx_path):
+            report_xlsx_url = f"/api/report/{day}/{job_id}.xlsx"
+
     return jsonify({
         "status": job.get("status"),
         "count": job.get("count", 0),
@@ -199,8 +208,8 @@ def api_status(job_id):
         "progress": progress,
         "error": job.get("error"),
         "done": job.get("done", False),
-        "report_pdf": f"/api/report/{day}/{job_id}.pdf" if job.get("done") else None,
-        "report_xlsx": f"/api/report/{day}/{job_id}.xlsx" if job.get("done") else None,
+        "report_pdf": report_pdf_url,
+        "report_xlsx": report_xlsx_url,
     })
 
 

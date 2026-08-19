@@ -30,6 +30,7 @@ const metaModel = document.getElementById("meta-model");
 const reportCountLabel = document.getElementById("report-count-label");
 const downloadPdf = document.getElementById("download-pdf");
 const downloadXlsx = document.getElementById("download-xlsx");
+const newVideoBtn = document.getElementById("new-video-btn");
 
 const historyBody = document.getElementById("history-body");
 
@@ -84,6 +85,11 @@ function resetStartBtn() {
   startBtn.textContent = "Start Counting";
 }
 
+function resetCancelBtn() {
+  cancelBtn.disabled = false;
+  cancelBtn.textContent = "🛑 Stop & Get PDF";
+}
+
 function beginRunView() {
   reportCard.hidden = true;
   runCard.hidden = false;
@@ -92,6 +98,7 @@ function beginRunView() {
   statProgress.textContent = "0%";
   statFrames.textContent = "";
   progressFill.style.width = "0%";
+  resetCancelBtn();
 
   sideTotal.textContent = "0";
   sideStatus.textContent = "Starting…";
@@ -163,13 +170,15 @@ async function pollStatus() {
       clearInterval(pollTimer);
       pollTimer = null;
       const ok = data.status === "finished";
-      runTitle.textContent = ok ? "Done" : (data.status === "cancelled" ? "Stopped" : "Error");
-      sideStatus.textContent = ok ? "Finished" : (data.status === "cancelled" ? "Cancelled" : (data.error || "Error"));
+      const isStopped = data.status === "cancelled";
+      runTitle.textContent = ok ? "Done" : (isStopped ? "Analysis Stopped" : "Error");
+      sideStatus.textContent = ok ? "Finished" : (isStopped ? "Stopped by user" : (data.error || "Error"));
       sideStatus.classList.remove("is-live");
       resetStartBtn();
+      resetCancelBtn();
 
-      if (ok && data.report_pdf) {
-        reportCountLabel.textContent = `${data.count} vehicles counted`;
+      if (data.report_pdf) {
+        reportCountLabel.textContent = `${data.count} vehicles counted ${isStopped ? "(Partial Analysis)" : ""}`;
         downloadPdf.href = data.report_pdf;
         downloadXlsx.href = data.report_xlsx;
         reportCard.hidden = false;
@@ -186,6 +195,8 @@ async function pollStatus() {
 
 async function cancelJob() {
   if (!currentJobId) return;
+  cancelBtn.disabled = true;
+  cancelBtn.textContent = "Generating PDF…";
   await fetch(`/api/cancel/${currentJobId}`, { method: "POST" });
 }
 
@@ -241,9 +252,22 @@ function updateDropZoneLabel() {
   }
 }
 
+function startNewVideo() {
+  fileInput.value = "";
+  updateDropZoneLabel();
+  clearError();
+  resetStartBtn();
+  resetCancelBtn();
+  reportCard.hidden = true;
+  runCard.hidden = true;
+  setupCard.hidden = false;
+  setupCard.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 startBtn.addEventListener("click", startJob);
 cancelBtn.addEventListener("click", cancelJob);
 refreshBtn.addEventListener("click", loadHistory);
+newVideoBtn.addEventListener("click", startNewVideo);
 
 dropZone.addEventListener("click", () => fileInput.click());
 
