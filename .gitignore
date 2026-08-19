@@ -19,3 +19,6 @@ __pycache__/
 
 # Model weights (large binaries, fetched separately)
 models/*.pt
+
+# Design-review screenshots (regenerated per session, not source)
+.impeccable/review/
