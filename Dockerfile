@@ -3,7 +3,7 @@ FROM python:3.10-slim
 # Install system dependencies for OpenCV, FFmpeg, and ReportLab
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     python3-dev \
     && rm -rf /var/lib/apt/lists/*
+
 
 WORKDIR /app
 
