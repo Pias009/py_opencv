@@ -1,8 +1,7 @@
 flask
-opencv-contrib-python
+opencv-python-headless
 numpy
 ultralytics
 reportlab
 openpyxl
 gunicorn
-
