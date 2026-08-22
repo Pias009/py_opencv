@@ -17,8 +17,9 @@ __pycache__/
 *.webm
 *.dav
 
-# Model weights (large binaries, fetched separately)
-models/*.pt
+# Model weights (track custom YOLO models for deployment)
+!models/*.pt
+
 
 # Design-review screenshots (regenerated per session, not source)
 .impeccable/review/

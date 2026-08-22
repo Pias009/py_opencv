@@ -4,3 +4,5 @@ numpy
 ultralytics
 reportlab
 openpyxl
+gunicorn
+
