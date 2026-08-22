@@ -75,11 +75,16 @@ def build_entry(job_id, job, day):
     }
 
 
-def refresh_reports(job_id, job, day_dir, day):
+def save_status_json(job_id, job, day_dir, day):
     entry = build_entry(job_id, job, day)
     json_path = os.path.join(day_dir, f"{job_id}.json")
     with open(json_path, "w") as f:
         json.dump(entry, f, indent=2)
+    return entry
+
+
+def refresh_reports(job_id, job, day_dir, day):
+    entry = save_status_json(job_id, job, day_dir, day)
     try:
         from report import generate_report_pdf
         generate_report_pdf(entry, os.path.join(day_dir, f"{job_id}.pdf"))
@@ -100,12 +105,12 @@ def job_worker(job_id, video_path, source_label):
     day_dir = day_results_dir()
     day = os.path.basename(day_dir)
 
-    def refresh_loop():
+    def status_loop():
         while not job.get("done"):
-            refresh_reports(job_id, job, day_dir, day)
+            save_status_json(job_id, job, day_dir, day)
             time.sleep(3)
 
-    threading.Thread(target=refresh_loop, daemon=True).start()
+    threading.Thread(target=status_loop, daemon=True).start()
 
     try:
         import cv2

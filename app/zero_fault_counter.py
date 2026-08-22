@@ -126,20 +126,24 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
     )
 
     frame_idx = 0
+    last_sink_time = 0
+    needs_vis = show_window or (frame_sink is not None)
+
     for result in results_generator:
         if job.get("cancel"):
             job["status"] = "cancelled"
             break
 
         frame_idx += vid_stride
-        frame = result.orig_img.copy()
+        frame = result.orig_img.copy() if needs_vis else None
 
         # Draw line boundaries
-        for i, ln in enumerate(lines):
-            color = LINE_COLORS[i % len(LINE_COLORS)]
-            cv2.line(frame, (ln.x1, ln.y1), (ln.x2, ln.y2), color, 3)
-            cv2.putText(frame, ln.name, (ln.x1 + 6, ln.y1 - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+        if needs_vis:
+            for i, ln in enumerate(lines):
+                color = LINE_COLORS[i % len(LINE_COLORS)]
+                cv2.line(frame, (ln.x1, ln.y1), (ln.x2, ln.y2), color, 3)
+                cv2.putText(frame, ln.name, (ln.x1 + 6, ln.y1 - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
         # Process detections with persistent track IDs
         if result.boxes is not None and result.boxes.id is not None:
@@ -216,45 +220,51 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                                 categories_summary[cat] = categories_summary.get(cat, 0) + 1
 
                                 # Draw highlight flash on crossing
-                                cv2.line(frame, (ln.x1, ln.y1), (ln.x2, ln.y2), (0, 255, 0), 5)
+                                if needs_vis:
+                                    cv2.line(frame, (ln.x1, ln.y1), (ln.x2, ln.y2), (0, 255, 0), 5)
 
-                # Draw track annotation box & centroid trail
-                x1, y1, x2, y2 = (int(v) for v in box)
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                if needs_vis:
+                    # Draw track annotation box & centroid trail
+                    x1, y1, x2, y2 = (int(v) for v in box)
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
-                label = f"#{track_id} {tr['best_category']} ({conf:.2f})"
-                cv2.putText(frame, label, (x1, max(15, y1 - 8)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                    label = f"#{track_id} {tr['best_category']} ({conf:.2f})"
+                    cv2.putText(frame, label, (x1, max(15, y1 - 8)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
-                # Draw movement trail
-                for j in range(1, len(history)):
-                    pt1 = (int(history[j-1][0]), int(history[j-1][1]))
-                    pt2 = (int(history[j][0]), int(history[j][1]))
-                    cv2.line(frame, pt1, pt2, (0, 200, 255), 2)
+                    # Draw movement trail
+                    for j in range(1, len(history)):
+                        pt1 = (int(history[j-1][0]), int(history[j-1][1]))
+                        pt2 = (int(history[j][0]), int(history[j][1]))
+                        cv2.line(frame, pt1, pt2, (0, 200, 255), 2)
 
-        # Draw status overlay
-        overlay_lines = [("TOTAL VEHICLES (0-Fault): " + str(total_count), (0, 0, 255), 1.0, 3)]
-        for i, ln in enumerate(lines):
-            color = LINE_COLORS[i % len(LINE_COLORS)]
-            overlay_lines.append((f"{ln.name}  in:{ln.in_count} out:{ln.out_count}", color, 0.65, 2))
+        if needs_vis:
+            # Draw status overlay
+            overlay_lines = [("TOTAL VEHICLES (0-Fault): " + str(total_count), (0, 0, 255), 1.0, 3)]
+            for i, ln in enumerate(lines):
+                color = LINE_COLORS[i % len(LINE_COLORS)]
+                overlay_lines.append((f"{ln.name}  in:{ln.in_count} out:{ln.out_count}", color, 0.65, 2))
 
-        line_height = 32
-        y = frame_h - 20 - line_height * (len(overlay_lines) - 1)
-        for text, color, scale, thickness in overlay_lines:
-            cv2.putText(frame, text, (15, y), cv2.FONT_HERSHEY_SIMPLEX, scale, color, thickness)
-            y += line_height
+            line_height = 32
+            y = frame_h - 20 - line_height * (len(overlay_lines) - 1)
+            for text, color, scale, thickness in overlay_lines:
+                cv2.putText(frame, text, (15, y), cv2.FONT_HERSHEY_SIMPLEX, scale, color, thickness)
+                y += line_height
 
         job["frame_idx"] = frame_idx
         job["count"] = total_count
         job["lines"] = {ln.name: {"in": ln.in_count, "out": ln.out_count} for ln in lines}
         job["categories"] = dict(categories_summary)
 
-        if frame_sink is not None:
-            ok, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
-            if ok:
-                frame_sink(jpeg.tobytes())
+        if frame_sink is not None and frame is not None:
+            now = time.time()
+            if now - last_sink_time >= 0.08:  # ~12 FPS stream throttle to save CPU
+                last_sink_time = now
+                ok, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                if ok:
+                    frame_sink(jpeg.tobytes())
 
-        if show_window:
+        if show_window and frame is not None:
             display_frame = frame
             if display_max_width and frame_w > display_max_width:
                 scale = display_max_width / frame_w

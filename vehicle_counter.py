@@ -64,7 +64,7 @@ def main():
 
     pos_linha = int(frame_h * args.line_pos)
 
-    subtracao = cv2.bgsegm.createBackgroundSubtractorMOG()
+    subtracao = cv2.createBackgroundSubtractorMOG2(history=500, varThreshold=40, detectShadows=True)
 
     detec = []
     carros = 0
@@ -99,11 +99,12 @@ def main():
             detec.append(centro)
             cv2.circle(frame1, centro, 4, (0, 0, 255), -1)
 
-            for (cx, cy) in detec:
+            for (cx, cy) in list(detec):
                 if (pos_linha - offset) < cy < (pos_linha + offset):
                     carros += 1
                     cv2.line(frame1, (25, pos_linha), (frame_w - 25, pos_linha), (0, 127, 255), 3)
-                    detec.remove((cx, cy))
+                    if (cx, cy) in detec:
+                        detec.remove((cx, cy))
                     print("car is detected : " + str(carros))
 
         cv2.putText(frame1, "VEHICLE COUNT : " + str(carros), (max(10, frame_w // 4), 70),
