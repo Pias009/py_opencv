@@ -101,6 +101,7 @@ def refresh_reports(job_id, job, day_dir, day):
 def job_worker(job_id, video_path, source_label):
     job = jobs[job_id]
     frame_sink = make_frame_sink(job)
+    vid_stride = job.get("vid_stride", 2)
 
     day_dir = day_results_dir()
     day = os.path.basename(day_dir)
@@ -122,7 +123,8 @@ def job_worker(job_id, video_path, source_label):
 
         from zero_fault_counter import run_zero_fault_counter
         run_zero_fault_counter(video_path, job, lines=lines, model_key="bnvd",
-                               conf_threshold=0.35, imgsz=640, frame_sink=frame_sink)
+                               conf_threshold=0.35, imgsz=640, vid_stride=vid_stride,
+                               frame_sink=frame_sink)
     except Exception as e:
         job["status"] = "error"
         job["error"] = str(e)
@@ -154,6 +156,15 @@ def api_start():
     ext = os.path.splitext(filename)[1].lower()
     if ext not in ALLOWED_EXT:
         return jsonify({"error": f"Unsupported file type: {ext}"}), 400
+
+    speed_val = request.form.get("speed", "2")
+    try:
+        vid_stride = int(speed_val)
+        if vid_stride < 1 or vid_stride > 5:
+            vid_stride = 2
+    except ValueError:
+        vid_stride = 2
+
     unique_name = f"{uuid.uuid4().hex}_{filename}"
     save_path = os.path.join(UPLOAD_DIR, unique_name)
     f.save(save_path)
@@ -170,7 +181,8 @@ def api_start():
         "categories": {},
         "frame_idx": 0,
         "total_frames": 0,
-        "speed_mode": "full",
+        "vid_stride": vid_stride,
+        "speed_mode": f"{vid_stride}x Fast-Forward",
         "reanalyzed": 0,
     }
     with jobs_lock:

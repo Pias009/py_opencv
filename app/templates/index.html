@@ -63,7 +63,15 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
           <input id="file-input" type="file" accept=".mp4,.avi,.mov,.mkv,.webm" hidden>
         </div>
       </div>
-      <button id="start-btn">Start Counting</button>
+      <div class="field" style="margin-top: 14px;">
+        <label for="speed-select">Analysis &amp; Live Stream Speed</label>
+        <select id="speed-select" class="speed-select">
+          <option value="2" selected>⚡ 2x Fast-Forward (200% Speed - Recommended)</option>
+          <option value="1">⏱️ 1x Normal Speed (100% Speed)</option>
+          <option value="3">🚀 3x Ultra Fast (300% Speed)</option>
+        </select>
+      </div>
+      <button id="start-btn" style="margin-top: 16px;">Start Counting</button>
       <p class="error" id="error-msg" hidden></p>
     </section>
 

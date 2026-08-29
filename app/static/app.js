@@ -61,8 +61,12 @@ async function startJob() {
   startBtn.disabled = true;
   startBtn.textContent = "Uploading…";
 
+  const speedSelect = document.getElementById("speed-select");
+  const speed = speedSelect ? speedSelect.value : "2";
+
   const formData = new FormData();
   formData.append("file", file);
+  formData.append("speed", speed);
 
   try {
     const res = await fetch("/api/start", { method: "POST", body: formData });
