@@ -1,0 +1,31 @@
+# Virtual Environment
+venv/
+.venv/
+env/
+ENV/
+
+# Byte-compiled / Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Git & IDE files
+.git/
+.gitignore
+.claude/
+.impeccable/
+
+# Large local video files and test data
+*.mp4
+*.dav
+*.jpeg
+*.jpg
+*.png
+*.xlsx
+
+# Local data uploads and results
+data/uploads/*
+data/results/*
+!data/uploads/.gitkeep
+!data/results/.gitkeep

@@ -8,16 +8,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsm6 \
     libxext6 \
     libxrender-dev \
-    gcc \
-    python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install CPU-only PyTorch first (170MB vs 2.5GB CUDA PyTorch) -> 10x Faster Build & Startup!
-RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+# Upgrade pip
+RUN pip install --no-cache-dir --upgrade pip
 
-# Install application dependencies
+# Install application dependencies (CPU-only PyTorch + Ultralytics + Flask)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
