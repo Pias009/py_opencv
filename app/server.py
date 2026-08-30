@@ -168,42 +168,72 @@ def api_history():
     return jsonify(load_history())
 
 
-@app.route("/api/list_local_videos")
-def api_list_local_videos():
-    vids = []
+CHUNK_TEMP_DIR = os.path.join(BASE_DIR, "data", "chunks")
+os.makedirs(CHUNK_TEMP_DIR, exist_ok=True)
+
+
+@app.route("/api/upload_chunk", methods=["POST"])
+def api_upload_chunk():
+    """Receives 4MB-5MB slices of large videos to eliminate Railway upload timeouts & proxy network errors."""
+    upload_id = request.form.get("upload_id")
     try:
-        for f in os.listdir(BASE_DIR):
-            if os.path.splitext(f)[1].lower() in ALLOWED_EXT:
-                vids.append({"name": f, "path": os.path.join(BASE_DIR, f)})
-    except Exception:
-        pass
-    return jsonify(vids)
+        chunk_index = int(request.form.get("chunk_index", 0))
+        total_chunks = int(request.form.get("total_chunks", 1))
+    except ValueError:
+        return jsonify({"error": "Invalid chunk parameters"}), 400
+
+    raw_filename = request.form.get("filename", "video.mp4")
+    filename = secure_filename(raw_filename)
+
+    if not upload_id or "chunk" not in request.files:
+        return jsonify({"error": "Missing chunk file or upload ID"}), 400
+
+    chunk_dir = os.path.join(CHUNK_TEMP_DIR, upload_id)
+    os.makedirs(chunk_dir, exist_ok=True)
+
+    chunk_file = request.files["chunk"]
+    chunk_path = os.path.join(chunk_dir, f"{chunk_index}.part")
+    chunk_file.save(chunk_path)
+
+    # Check if all chunks have arrived
+    parts = os.listdir(chunk_dir)
+    if len(parts) >= total_chunks:
+        unique_name = f"{uuid.uuid4().hex}_{filename}"
+        final_path = os.path.join(UPLOAD_DIR, unique_name)
+
+        with open(final_path, "wb") as outfile:
+            for i in range(total_chunks):
+                p_path = os.path.join(chunk_dir, f"{i}.part")
+                if os.path.exists(p_path):
+                    with open(p_path, "rb") as infile:
+                        outfile.write(infile.read())
+                    try:
+                        os.remove(p_path)
+                    except Exception:
+                        pass
+
+        try:
+            os.rmdir(chunk_dir)
+        except Exception:
+            pass
+
+        return jsonify({
+            "status": "complete",
+            "file_path": final_path,
+            "filename": filename
+        })
+
+    return jsonify({"status": "chunk_received", "chunk_index": chunk_index, "received": len(parts)})
 
 
 @app.route("/api/start", methods=["POST"])
 def api_start():
-    source_type = request.form.get("source_type", "upload")
-    local_path = request.form.get("local_path", "").strip()
+    save_path = request.form.get("file_path")
+    filename = request.form.get("filename", "Uploaded Video")
 
-    save_path = None
-    filename = "Local Source"
-
-    if source_type in ["local", "camera"] and local_path:
-        if local_path.isdigit():
-            save_path = int(local_path)
-            filename = f"Camera #{local_path}"
-        elif local_path.startswith(("rtsp://", "http://", "https://")):
-            save_path = local_path
-            filename = "Live Network Stream"
-        elif os.path.exists(local_path):
-            save_path = local_path
-            filename = os.path.basename(local_path)
-        else:
-            return jsonify({"error": f"Local file path not found: {local_path}"}), 400
-    else:
-        if "file" not in request.files or not request.files["file"].filename:
-            return jsonify({"error": "No video file provided"}), 400
-
+    if save_path and os.path.exists(save_path):
+        filename = os.path.basename(save_path)
+    elif "file" in request.files and request.files["file"].filename:
         f = request.files["file"]
         filename = secure_filename(f.filename)
         ext = os.path.splitext(filename)[1].lower()
@@ -213,6 +243,8 @@ def api_start():
         unique_name = f"{uuid.uuid4().hex}_{filename}"
         save_path = os.path.join(UPLOAD_DIR, unique_name)
         f.save(save_path)
+    else:
+        return jsonify({"error": "No valid video file or upload path provided"}), 400
 
     speed_val = request.form.get("speed", "2")
     try:

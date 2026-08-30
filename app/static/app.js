@@ -49,63 +49,68 @@ function clearError() {
   errorMsg.textContent = "";
 }
 
-let activeSourceMode = "local"; // "local", "upload", "camera"
+const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB slices for fast, reliable Railway uploading
 
-const tabLocalBtn = document.getElementById("tab-local-btn");
-const tabUploadBtn = document.getElementById("tab-upload-btn");
-const tabCameraBtn = document.getElementById("tab-camera-btn");
+async function uploadFileInChunks(file, onProgress) {
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+  const uploadId = Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
+  let completedFilePath = null;
 
-const sourceLocalBlock = document.getElementById("source-local-block");
-const sourceUploadBlock = document.getElementById("source-upload-block");
-const sourceCameraBlock = document.getElementById("source-camera-block");
+  for (let i = 0; i < totalChunks; i++) {
+    const start = i * CHUNK_SIZE;
+    const end = Math.min(file.size, start + CHUNK_SIZE);
+    const chunkBlob = file.slice(start, end);
 
-const localPathInput = document.getElementById("local-path-input");
-const localQuickSelect = document.getElementById("local-quick-select");
-const cameraUrlInput = document.getElementById("camera-url-input");
+    const chunkFormData = new FormData();
+    chunkFormData.append("upload_id", uploadId);
+    chunkFormData.append("chunk_index", i);
+    chunkFormData.append("total_chunks", totalChunks);
+    chunkFormData.append("filename", file.name);
+    chunkFormData.append("chunk", chunkBlob, file.name);
 
-function setSourceMode(mode) {
-  activeSourceMode = mode;
-  [tabLocalBtn, tabUploadBtn, tabCameraBtn].forEach(btn => btn && btn.classList.remove("active"));
-  [sourceLocalBlock, sourceUploadBlock, sourceCameraBlock].forEach(block => block && (block.hidden = true));
+    let attempts = 0;
+    let success = false;
+    let responseData = null;
 
-  if (mode === "local") {
-    tabLocalBtn && tabLocalBtn.classList.add("active");
-    sourceLocalBlock && (sourceLocalBlock.hidden = false);
-  } else if (mode === "upload") {
-    tabUploadBtn && tabUploadBtn.classList.add("active");
-    sourceUploadBlock && (sourceUploadBlock.hidden = false);
-  } else if (mode === "camera") {
-    tabCameraBtn && tabCameraBtn.classList.add("active");
-    sourceCameraBlock && (sourceCameraBlock.hidden = false);
+    while (attempts < 3 && !success) {
+      try {
+        attempts++;
+        const res = await fetch("/api/upload_chunk", { method: "POST", body: chunkFormData });
+        responseData = await res.json();
+        if (res.ok) {
+          success = true;
+        } else {
+          if (attempts >= 3) throw new Error(responseData.error || "Chunk upload failed");
+          await new Promise(r => setTimeout(r, 1000));
+        }
+      } catch (err) {
+        if (attempts >= 3) throw err;
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+
+    const progressPct = Math.round(((i + 1) / totalChunks) * 100);
+    onProgress(progressPct);
+
+    if (responseData && responseData.status === "complete") {
+      completedFilePath = responseData.file_path;
+    }
   }
-}
 
-tabLocalBtn && tabLocalBtn.addEventListener("click", () => setSourceMode("local"));
-tabUploadBtn && tabUploadBtn.addEventListener("click", () => setSourceMode("upload"));
-tabCameraBtn && tabCameraBtn.addEventListener("click", () => setSourceMode("camera"));
-
-async function loadLocalQuickSelect() {
-  try {
-    const res = await fetch("/api/list_local_videos");
-    const files = await res.json();
-    if (res.ok && files.length) {
-      localQuickSelect.innerHTML = `<option value="">Quick Select...</option>` +
-        files.map(f => `<option value="${escapeHtml(f.path)}">${escapeHtml(f.name)}</option>`).join("");
-    }
-  } catch (e) {}
-}
-loadLocalQuickSelect();
-
-if (localQuickSelect) {
-  localQuickSelect.addEventListener("change", () => {
-    if (localQuickSelect.value) {
-      localPathInput.value = localQuickSelect.value;
-    }
-  });
+  return completedFilePath;
 }
 
 async function startJob() {
   clearError();
+  const file = fileInput.files[0];
+
+  if (!file) {
+    showError("Choose a video file to upload.");
+    return;
+  }
+
+  startBtn.disabled = true;
+  startBtn.textContent = "Uploading 0%…";
 
   const speedSelect = document.getElementById("speed-select");
   const lineModeSelect = document.getElementById("line-mode-select");
@@ -115,73 +120,35 @@ async function startJob() {
   const lineMode = lineModeSelect ? lineModeSelect.value : "box";
   const invert = invertCheck ? invertCheck.checked : false;
 
-  const formData = new FormData();
-  formData.append("speed", speed);
-  formData.append("line_mode", lineMode);
-  formData.append("invert", invert);
+  try {
+    const uploadedFilePath = await uploadFileInChunks(file, (pct) => {
+      startBtn.textContent = `Uploading ${pct}%…`;
+    });
 
-  if (activeSourceMode === "local") {
-    const localPath = localPathInput ? localPathInput.value.trim() : "";
-    if (!localPath) {
-      showError("Enter a local video file path.");
-      return;
+    startBtn.textContent = "Starting Analysis…";
+
+    const startFormData = new FormData();
+    if (uploadedFilePath) {
+      startFormData.append("file_path", uploadedFilePath);
     }
-    formData.append("source_type", "local");
-    formData.append("local_path", localPath);
-    startBtn.disabled = true;
-    startBtn.textContent = "Starting Local Video…";
-  } else if (activeSourceMode === "camera") {
-    const cameraUrl = cameraUrlInput ? cameraUrlInput.value.trim() : "0";
-    formData.append("source_type", "camera");
-    formData.append("local_path", cameraUrl);
-    startBtn.disabled = true;
-    startBtn.textContent = "Connecting Camera…";
-  } else {
-    const file = fileInput.files[0];
-    if (!file) {
-      showError("Choose a video file to upload.");
-      return;
-    }
-    formData.append("source_type", "upload");
-    formData.append("file", file);
-    startBtn.disabled = true;
-    startBtn.textContent = "Uploading 0%…";
-  }
+    startFormData.append("filename", file.name);
+    startFormData.append("speed", speed);
+    startFormData.append("line_mode", lineMode);
+    startFormData.append("invert", invert);
 
-  const xhr = new XMLHttpRequest();
-  xhr.open("POST", "/api/start", true);
-
-  if (activeSourceMode === "upload") {
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) {
-        const pct = Math.round((e.loaded / e.total) * 100);
-        startBtn.textContent = `Uploading ${pct}%…`;
-      }
-    };
-  }
-
-  xhr.onload = () => {
-    try {
-      const data = JSON.parse(xhr.responseText);
-      if (xhr.status >= 200 && xhr.status < 300 && data.job_id) {
-        currentJobId = data.job_id;
-        beginRunView();
-      } else {
-        showError(data.error || "Failed to start job.");
-        resetStartBtn();
-      }
-    } catch (err) {
-      showError("Server response error: " + err.message);
+    const res = await fetch("/api/start", { method: "POST", body: startFormData });
+    const data = await res.json();
+    if (res.ok && data.job_id) {
+      currentJobId = data.job_id;
+      beginRunView();
+    } else {
+      showError(data.error || "Failed to start job.");
       resetStartBtn();
     }
-  };
-
-  xhr.onerror = () => {
-    showError("Network error. Please check connection and try again.");
+  } catch (err) {
+    showError("Upload error: " + err.message);
     resetStartBtn();
-  };
-
-  xhr.send(formData);
+  }
 }
 
 function resetStartBtn() {

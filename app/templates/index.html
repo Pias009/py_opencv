@@ -56,38 +56,12 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 
   <main class="stage">
     <section class="card" id="setup-card">
-      <div class="source-tabs" style="display: flex; gap: 8px; margin-bottom: 16px;">
-        <button id="tab-local-btn" type="button" class="tab-btn active">📁 Local PC File Path (0 Upload)</button>
-        <button id="tab-upload-btn" type="button" class="tab-btn">⬆️ Web File Upload</button>
-        <button id="tab-camera-btn" type="button" class="tab-btn">🎥 Live Camera / RTSP</button>
-      </div>
-
-      <!-- Local File Path Mode -->
-      <div id="source-local-block" class="field">
-        <label for="local-path-input">Local Video File Path (No upload required)</label>
-        <div style="display: flex; gap: 8px;">
-          <input id="local-path-input" type="text" placeholder="/home/pias/Documents/py/video.mp4" value="/home/pias/Documents/py/video.mp4" style="flex: 1;">
-          <select id="local-quick-select" class="speed-select" style="width: auto;">
-            <option value="">Quick Select...</option>
-          </select>
-        </div>
-        <span style="font-size: 0.78rem; color: var(--text-dim); margin-top: 4px;">Directly reads video from local disk at 0.1s startup time without sending data over network.</span>
-      </div>
-
-      <!-- Web Upload Mode -->
-      <div id="source-upload-block" class="field" hidden>
-        <label for="file-input">Upload a video</label>
+      <div class="field">
+        <label for="file-input">Select or Drag &amp; Drop Video</label>
         <div id="drop-zone" class="drop-zone">
-          <p id="drop-zone-text">Drag &amp; drop a video here, or click to choose a file</p>
+          <p id="drop-zone-text">📁 Drag &amp; drop a video here, or click to choose a file</p>
           <input id="file-input" type="file" accept=".mp4,.avi,.mov,.mkv,.webm" hidden>
         </div>
-      </div>
-
-      <!-- Camera / RTSP Mode -->
-      <div id="source-camera-block" class="field" hidden>
-        <label for="camera-url-input">Camera ID or RTSP Stream URL</label>
-        <input id="camera-url-input" type="text" placeholder="0 (Webcam) or rtsp://192.168.1.100:554/stream1" value="0">
-        <span style="font-size: 0.78rem; color: var(--text-dim); margin-top: 4px;">Enter '0' for local USB webcam, or RTSP stream URL for CCTV cameras.</span>
       </div>
       <div class="field-row" style="margin-top: 14px;">
         <div class="field">
