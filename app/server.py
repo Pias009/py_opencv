@@ -168,16 +168,51 @@ def api_history():
     return jsonify(load_history())
 
 
+@app.route("/api/list_local_videos")
+def api_list_local_videos():
+    vids = []
+    try:
+        for f in os.listdir(BASE_DIR):
+            if os.path.splitext(f)[1].lower() in ALLOWED_EXT:
+                vids.append({"name": f, "path": os.path.join(BASE_DIR, f)})
+    except Exception:
+        pass
+    return jsonify(vids)
+
+
 @app.route("/api/start", methods=["POST"])
 def api_start():
-    if "file" not in request.files or not request.files["file"].filename:
-        return jsonify({"error": "No video file provided"}), 400
+    source_type = request.form.get("source_type", "upload")
+    local_path = request.form.get("local_path", "").strip()
 
-    f = request.files["file"]
-    filename = secure_filename(f.filename)
-    ext = os.path.splitext(filename)[1].lower()
-    if ext not in ALLOWED_EXT:
-        return jsonify({"error": f"Unsupported file type: {ext}"}), 400
+    save_path = None
+    filename = "Local Source"
+
+    if source_type in ["local", "camera"] and local_path:
+        if local_path.isdigit():
+            save_path = int(local_path)
+            filename = f"Camera #{local_path}"
+        elif local_path.startswith(("rtsp://", "http://", "https://")):
+            save_path = local_path
+            filename = "Live Network Stream"
+        elif os.path.exists(local_path):
+            save_path = local_path
+            filename = os.path.basename(local_path)
+        else:
+            return jsonify({"error": f"Local file path not found: {local_path}"}), 400
+    else:
+        if "file" not in request.files or not request.files["file"].filename:
+            return jsonify({"error": "No video file provided"}), 400
+
+        f = request.files["file"]
+        filename = secure_filename(f.filename)
+        ext = os.path.splitext(filename)[1].lower()
+        if ext not in ALLOWED_EXT:
+            return jsonify({"error": f"Unsupported file type: {ext}"}), 400
+
+        unique_name = f"{uuid.uuid4().hex}_{filename}"
+        save_path = os.path.join(UPLOAD_DIR, unique_name)
+        f.save(save_path)
 
     speed_val = request.form.get("speed", "2")
     try:
@@ -189,10 +224,6 @@ def api_start():
 
     line_mode = request.form.get("line_mode", "box")
     invert_direction = request.form.get("invert", "false").lower() == "true"
-
-    unique_name = f"{uuid.uuid4().hex}_{filename}"
-    save_path = os.path.join(UPLOAD_DIR, unique_name)
-    f.save(save_path)
 
     job_id = uuid.uuid4().hex
     job = {

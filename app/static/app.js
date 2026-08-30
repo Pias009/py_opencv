@@ -49,17 +49,63 @@ function clearError() {
   errorMsg.textContent = "";
 }
 
+let activeSourceMode = "local"; // "local", "upload", "camera"
+
+const tabLocalBtn = document.getElementById("tab-local-btn");
+const tabUploadBtn = document.getElementById("tab-upload-btn");
+const tabCameraBtn = document.getElementById("tab-camera-btn");
+
+const sourceLocalBlock = document.getElementById("source-local-block");
+const sourceUploadBlock = document.getElementById("source-upload-block");
+const sourceCameraBlock = document.getElementById("source-camera-block");
+
+const localPathInput = document.getElementById("local-path-input");
+const localQuickSelect = document.getElementById("local-quick-select");
+const cameraUrlInput = document.getElementById("camera-url-input");
+
+function setSourceMode(mode) {
+  activeSourceMode = mode;
+  [tabLocalBtn, tabUploadBtn, tabCameraBtn].forEach(btn => btn && btn.classList.remove("active"));
+  [sourceLocalBlock, sourceUploadBlock, sourceCameraBlock].forEach(block => block && (block.hidden = true));
+
+  if (mode === "local") {
+    tabLocalBtn && tabLocalBtn.classList.add("active");
+    sourceLocalBlock && (sourceLocalBlock.hidden = false);
+  } else if (mode === "upload") {
+    tabUploadBtn && tabUploadBtn.classList.add("active");
+    sourceUploadBlock && (sourceUploadBlock.hidden = false);
+  } else if (mode === "camera") {
+    tabCameraBtn && tabCameraBtn.classList.add("active");
+    sourceCameraBlock && (sourceCameraBlock.hidden = false);
+  }
+}
+
+tabLocalBtn && tabLocalBtn.addEventListener("click", () => setSourceMode("local"));
+tabUploadBtn && tabUploadBtn.addEventListener("click", () => setSourceMode("upload"));
+tabCameraBtn && tabCameraBtn.addEventListener("click", () => setSourceMode("camera"));
+
+async function loadLocalQuickSelect() {
+  try {
+    const res = await fetch("/api/list_local_videos");
+    const files = await res.json();
+    if (res.ok && files.length) {
+      localQuickSelect.innerHTML = `<option value="">Quick Select...</option>` +
+        files.map(f => `<option value="${escapeHtml(f.path)}">${escapeHtml(f.name)}</option>`).join("");
+    }
+  } catch (e) {}
+}
+loadLocalQuickSelect();
+
+if (localQuickSelect) {
+  localQuickSelect.addEventListener("change", () => {
+    if (localQuickSelect.value) {
+      localPathInput.value = localQuickSelect.value;
+    }
+  });
+}
+
 async function startJob() {
   clearError();
-  const file = fileInput.files[0];
-
-  if (!file) {
-    showError("Choose a video file to upload.");
-    return;
-  }
-
-  startBtn.disabled = true;
-  startBtn.textContent = "Uploading 0%…";
 
   const speedSelect = document.getElementById("speed-select");
   const lineModeSelect = document.getElementById("line-mode-select");
@@ -70,20 +116,49 @@ async function startJob() {
   const invert = invertCheck ? invertCheck.checked : false;
 
   const formData = new FormData();
-  formData.append("file", file);
   formData.append("speed", speed);
   formData.append("line_mode", lineMode);
   formData.append("invert", invert);
 
+  if (activeSourceMode === "local") {
+    const localPath = localPathInput ? localPathInput.value.trim() : "";
+    if (!localPath) {
+      showError("Enter a local video file path.");
+      return;
+    }
+    formData.append("source_type", "local");
+    formData.append("local_path", localPath);
+    startBtn.disabled = true;
+    startBtn.textContent = "Starting Local Video…";
+  } else if (activeSourceMode === "camera") {
+    const cameraUrl = cameraUrlInput ? cameraUrlInput.value.trim() : "0";
+    formData.append("source_type", "camera");
+    formData.append("local_path", cameraUrl);
+    startBtn.disabled = true;
+    startBtn.textContent = "Connecting Camera…";
+  } else {
+    const file = fileInput.files[0];
+    if (!file) {
+      showError("Choose a video file to upload.");
+      return;
+    }
+    formData.append("source_type", "upload");
+    formData.append("file", file);
+    startBtn.disabled = true;
+    startBtn.textContent = "Uploading 0%…";
+  }
+
   const xhr = new XMLHttpRequest();
   xhr.open("POST", "/api/start", true);
 
-  xhr.upload.onprogress = (e) => {
-    if (e.lengthComputable) {
-      const pct = Math.round((e.loaded / e.total) * 100);
-      startBtn.textContent = `Uploading ${pct}%…`;
-    }
-  };
+  if (activeSourceMode === "upload") {
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        const pct = Math.round((e.loaded / e.total) * 100);
+        startBtn.textContent = `Uploading ${pct}%…`;
+      }
+    };
+  }
 
   xhr.onload = () => {
     try {
@@ -102,7 +177,7 @@ async function startJob() {
   };
 
   xhr.onerror = () => {
-    showError("Network upload error. Please check connection and try again.");
+    showError("Network error. Please check connection and try again.");
     resetStartBtn();
   };
 
