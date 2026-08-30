@@ -60,11 +60,21 @@ class CountingLine:
         proj_x, proj_y = self.x1 + t * dx, self.y1 + t * dy
         return ((px - proj_x) ** 2 + (py - proj_y) ** 2) ** 0.5
 
+    def invert(self):
+        """Flip the normal vector so IN becomes OUT and OUT becomes IN."""
+        self.nx, self.ny = -self.nx, -self.ny
+
 
 def default_lines(frame_w, frame_h):
     """Fallback: a single horizontal line at 45% height, spanning the frame."""
     y = int(frame_h * 0.45)
     return [CountingLine("Line1", 25, y, frame_w - 25, y)]
+
+
+def vertical_line(frame_w, frame_h, pct=0.5):
+    """A single vertical line down the frame at pct width (0-1)."""
+    x = int(frame_w * pct)
+    return [CountingLine("Line1", x, 25, x, frame_h - 25)]
 
 
 def box_lines(frame_w, frame_h, margin=40, scale=0.65):

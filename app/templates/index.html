@@ -63,13 +63,29 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
           <input id="file-input" type="file" accept=".mp4,.avi,.mov,.mkv,.webm" hidden>
         </div>
       </div>
-      <div class="field" style="margin-top: 14px;">
-        <label for="speed-select">Analysis &amp; Live Stream Speed</label>
-        <select id="speed-select" class="speed-select">
-          <option value="2" selected>⚡ 2x Fast-Forward (200% Speed - Recommended)</option>
-          <option value="1">⏱️ 1x Normal Speed (100% Speed)</option>
-          <option value="3">🚀 3x Ultra Fast (300% Speed)</option>
-        </select>
+      <div class="field-row" style="margin-top: 14px;">
+        <div class="field">
+          <label for="line-mode-select">Auto Lane / Boundary Mode</label>
+          <select id="line-mode-select" class="speed-select">
+            <option value="box" selected>🎯 4-Way Intersection Box (Auto Centered)</option>
+            <option value="horizontal">➖ Single Horizontal Boundary Line</option>
+            <option value="vertical">Vertical Boundary Line</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="speed-select">Analysis &amp; Stream Speed</label>
+          <select id="speed-select" class="speed-select">
+            <option value="2" selected>⚡ 2x Fast-Forward (200% Speed)</option>
+            <option value="1">⏱️ 1x Normal Speed (100% Speed)</option>
+            <option value="3">🚀 3x Ultra Fast (300% Speed)</option>
+          </select>
+        </div>
+      </div>
+      <div class="field" style="margin-top: 6px;">
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text);">
+          <input type="checkbox" id="invert-check" style="width: 16px; height: 16px; accent-color: var(--accent);">
+          <span>🔄 Reverse Traffic Direction (Swap IN &amp; OUT counts)</span>
+        </label>
       </div>
       <button id="start-btn" style="margin-top: 16px;">Start Counting</button>
       <p class="error" id="error-msg" hidden></p>
@@ -78,7 +94,10 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     <section class="card" id="run-card" hidden>
       <div class="run-header">
         <h2 id="run-title">Processing&hellip;</h2>
-        <button id="cancel-btn" class="stop-btn">🛑 Stop &amp; Get PDF</button>
+        <div style="display: flex; gap: 8px;">
+          <button id="invert-live-btn" class="secondary" title="Swap IN / OUT direction live during counting">🔄 Switch IN/OUT Direction</button>
+          <button id="cancel-btn" class="stop-btn">🛑 Stop &amp; Get PDF</button>
+        </div>
       </div>
       <img id="stream-img" alt="Live annotated video">
       <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>

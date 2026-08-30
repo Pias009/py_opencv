@@ -98,10 +98,25 @@ def refresh_reports(job_id, job, day_dir, day):
     return entry
 
 
+def prewarm_models():
+    """Pre-load YOLO model in background at startup to eliminate delay when user uploads video."""
+    try:
+        from zero_fault_counter import BNVD_MODEL_PATH, COCO_MODEL_PATH, get_yolo_model
+        if os.path.exists(BNVD_MODEL_PATH):
+            get_yolo_model(BNVD_MODEL_PATH)
+        elif os.path.exists(COCO_MODEL_PATH):
+            get_yolo_model(COCO_MODEL_PATH)
+    except Exception:
+        pass
+
+threading.Thread(target=prewarm_models, daemon=True).start()
+
+
 def job_worker(job_id, video_path, source_label):
     job = jobs[job_id]
     frame_sink = make_frame_sink(job)
     vid_stride = job.get("vid_stride", 2)
+    line_mode = job.get("line_mode", "box")
 
     day_dir = day_results_dir()
     day = os.path.basename(day_dir)
@@ -115,15 +130,22 @@ def job_worker(job_id, video_path, source_label):
 
     try:
         import cv2
+        from counter import box_lines, default_lines, vertical_line
         cap = cv2.VideoCapture(video_path)
         frame_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         cap.release()
-        lines = box_lines(frame_w, frame_h, margin=40)
+
+        if line_mode == "horizontal":
+            lines = default_lines(frame_w, frame_h)
+        elif line_mode == "vertical":
+            lines = vertical_line(frame_w, frame_h, pct=0.5)
+        else:
+            lines = box_lines(frame_w, frame_h, margin=40)
 
         from zero_fault_counter import run_zero_fault_counter
         run_zero_fault_counter(video_path, job, lines=lines, model_key="bnvd",
-                               conf_threshold=0.35, imgsz=640, vid_stride=vid_stride,
+                               conf_threshold=0.25, imgsz=640, vid_stride=vid_stride,
                                frame_sink=frame_sink)
     except Exception as e:
         job["status"] = "error"
@@ -165,6 +187,9 @@ def api_start():
     except ValueError:
         vid_stride = 2
 
+    line_mode = request.form.get("line_mode", "box")
+    invert_direction = request.form.get("invert", "false").lower() == "true"
+
     unique_name = f"{uuid.uuid4().hex}_{filename}"
     save_path = os.path.join(UPLOAD_DIR, unique_name)
     f.save(save_path)
@@ -182,6 +207,8 @@ def api_start():
         "frame_idx": 0,
         "total_frames": 0,
         "vid_stride": vid_stride,
+        "line_mode": line_mode,
+        "invert_direction": invert_direction,
         "speed_mode": f"{vid_stride}x Fast-Forward",
         "reanalyzed": 0,
     }
@@ -192,6 +219,15 @@ def api_start():
     t.start()
 
     return jsonify({"job_id": job_id})
+
+
+@app.route("/api/invert/<job_id>", methods=["POST"])
+def api_invert(job_id):
+    job = jobs.get(job_id)
+    if not job:
+        return jsonify({"error": "Unknown job"}), 404
+    job["invert_direction"] = not job.get("invert_direction", False)
+    return jsonify({"inverted": job["invert_direction"]})
 
 
 @app.route("/api/status/<job_id>")

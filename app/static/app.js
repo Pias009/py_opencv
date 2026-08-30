@@ -59,29 +59,54 @@ async function startJob() {
   }
 
   startBtn.disabled = true;
-  startBtn.textContent = "Uploading…";
+  startBtn.textContent = "Uploading 0%…";
 
   const speedSelect = document.getElementById("speed-select");
+  const lineModeSelect = document.getElementById("line-mode-select");
+  const invertCheck = document.getElementById("invert-check");
+
   const speed = speedSelect ? speedSelect.value : "2";
+  const lineMode = lineModeSelect ? lineModeSelect.value : "box";
+  const invert = invertCheck ? invertCheck.checked : false;
 
   const formData = new FormData();
   formData.append("file", file);
   formData.append("speed", speed);
+  formData.append("line_mode", lineMode);
+  formData.append("invert", invert);
 
-  try {
-    const res = await fetch("/api/start", { method: "POST", body: formData });
-    const data = await res.json();
-    if (!res.ok) {
-      showError(data.error || "Failed to start job.");
-      resetStartBtn();
-      return;
+  const xhr = new XMLHttpRequest();
+  xhr.open("POST", "/api/start", true);
+
+  xhr.upload.onprogress = (e) => {
+    if (e.lengthComputable) {
+      const pct = Math.round((e.loaded / e.total) * 100);
+      startBtn.textContent = `Uploading ${pct}%…`;
     }
-    currentJobId = data.job_id;
-    beginRunView();
-  } catch (err) {
-    showError("Network error: " + err.message);
+  };
+
+  xhr.onload = () => {
+    try {
+      const data = JSON.parse(xhr.responseText);
+      if (xhr.status >= 200 && xhr.status < 300 && data.job_id) {
+        currentJobId = data.job_id;
+        beginRunView();
+      } else {
+        showError(data.error || "Failed to start job.");
+        resetStartBtn();
+      }
+    } catch (err) {
+      showError("Server response error: " + err.message);
+      resetStartBtn();
+    }
+  };
+
+  xhr.onerror = () => {
+    showError("Network upload error. Please check connection and try again.");
     resetStartBtn();
-  }
+  };
+
+  xhr.send(formData);
 }
 
 function resetStartBtn() {
@@ -266,6 +291,23 @@ function startNewVideo() {
   runCard.hidden = true;
   setupCard.hidden = false;
   setupCard.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+const invertLiveBtn = document.getElementById("invert-live-btn");
+
+if (invertLiveBtn) {
+  invertLiveBtn.addEventListener("click", async () => {
+    if (!currentJobId) return;
+    try {
+      const res = await fetch(`/api/invert/${currentJobId}`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        invertLiveBtn.textContent = data.inverted ? "🔄 Direction Swapped (IN ↔ OUT)" : "🔄 Switch IN/OUT Direction";
+      }
+    } catch (e) {
+      // ignore
+    }
+  });
 }
 
 startBtn.addEventListener("click", startJob);
