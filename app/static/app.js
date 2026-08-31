@@ -554,6 +554,80 @@ cancelBtn.addEventListener("click", cancelJob);
 refreshBtn.addEventListener("click", loadHistory);
 newVideoBtn.addEventListener("click", startNewVideo);
 
+// --- Visual Feature Reference Modal (i Icon Handler) ---
+const infoModal = document.getElementById("info-modal");
+const infoModalTitle = document.getElementById("info-modal-title");
+const infoModalImg = document.getElementById("info-modal-img");
+const infoModalTag = document.getElementById("info-modal-tag");
+const infoModalDesc = document.getElementById("info-modal-desc");
+const infoModalClose = document.getElementById("info-modal-close");
+const infoModalOk = document.getElementById("info-modal-ok");
+
+const INFO_REFERENCES = {
+  "boundary": {
+    title: "🎯 Boundary Modes (Box, Horizontal, Vertical)",
+    img: "/static/img/intersection_box.png",
+    tag: "🎯 WHAT WILL IT COUNT IF ENABLED?",
+    desc: "<b>4-Way Intersection Box:</b> Draws a centered 4-way box with North, South, West, and East boundaries. Ideal for complex road intersections.<br><br><b>Single Horizontal:</b> Draws a single horizontal boundary line across the road.<br><br><b>Vertical Line:</b> Draws a vertical line splitting left/right lanes. Perfect for 1-side lane counting."
+  },
+  "speed": {
+    title: "⚡ Analysis & Stream Speed (1x, 2x, 3x)",
+    img: "/static/img/intersection_box.png",
+    tag: "⚡ STREAM SPEED EXPLANATION",
+    desc: "<b>2x Fast-Forward (Default):</b> Processes 200% faster with zero accuracy loss for rapid counting results.<br><br><b>1x Normal Speed:</b> Frame-by-frame analysis at 100% video speed.<br><br><b>3x Ultra Fast:</b> Max speed processing for long multi-hour video streams."
+  },
+  "in_flow": {
+    title: "🟢 IN Flow Counting",
+    img: "/static/img/in_flow.png",
+    tag: "🟢 WHAT WILL IT COUNT IF ENABLED?",
+    desc: "<b>When 🟢 IN Flow is ACTIVE:</b> The AI detector will track and count all vehicles moving INWARD (entering the intersection or crossing the boundary towards the focal direction).<br><br><i>If un-checked/disabled, incoming vehicles will NOT be counted.</i>"
+  },
+  "out_flow": {
+    title: "🔴 OUT Flow Counting",
+    img: "/static/img/out_flow.png",
+    tag: "🔴 WHAT WILL IT COUNT IF ENABLED?",
+    desc: "<b>When 🔴 OUT Flow is ACTIVE:</b> The AI detector will track and count all vehicles moving OUTWARD (leaving the intersection or moving away from the focal direction).<br><br><i>If un-checked/disabled, outgoing vehicles will NOT be counted.</i>"
+  },
+  "terminology": {
+    title: "🏷️ Direction Naming Terminology",
+    img: "/static/img/in_flow.png",
+    tag: "🏷️ REPORT & COUNTER LABELS",
+    desc: "Allows you to select custom naming for reports and live counters:<br><br>• <b>IN / OUT</b>: Default traffic notation.<br>• <b>COMING / GOING</b>: Intuitive notation for highway lanes.<br>• <b>FORWARD / BACKWARD</b>: Directional notation for 1-side road tracking."
+  },
+  "reverse": {
+    title: "🔄 Reverse Direction (Vector Inversion)",
+    img: "/static/img/out_flow.png",
+    tag: "🔄 WHAT DOES REVERSE DIRECTION DO?",
+    desc: "Flips the vector normal of all boundary lines by 180°. Use this if IN and OUT are reversed on your video or if you want to count the opposite lane on a 1-side road camera!"
+  },
+  "compass": {
+    title: "🧭 Compass Boundary Side Lines (North, South, West, East)",
+    img: "/static/img/compass.png",
+    tag: "🧭 WHAT DO SIDE LINES COUNT?",
+    desc: "Tracks vehicles crossing specific boundary sides:<br><br>• <b>North Line:</b> Top boundary.<br>• <b>South Line:</b> Bottom boundary.<br>• <b>West Line:</b> Left boundary.<br>• <b>East Line:</b> Right boundary.<br><br>Un-checking a line disables tracking for that specific side of the intersection."
+  }
+};
+
+document.querySelectorAll(".info-trigger").forEach(btn => {
+  btn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const refKey = btn.getAttribute("data-ref");
+    const infoData = INFO_REFERENCES[refKey];
+
+    if (infoData && infoModal) {
+      if (infoModalTitle) infoModalTitle.textContent = infoData.title;
+      if (infoModalImg) infoModalImg.src = infoData.img;
+      if (infoModalTag) infoModalTag.textContent = infoData.tag;
+      if (infoModalDesc) infoModalDesc.innerHTML = infoData.desc;
+      infoModal.hidden = false;
+    }
+  });
+});
+
+if (infoModalClose) infoModalClose.addEventListener("click", () => infoModal.hidden = true);
+if (infoModalOk) infoModalOk.addEventListener("click", () => infoModal.hidden = true);
+
 dropZone.addEventListener("click", () => fileInput.click());
 
 fileInput.addEventListener("change", () => {

@@ -90,7 +90,10 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
       </div>
       <div class="field-row" style="margin-top: 14px;">
         <div class="field">
-          <label for="line-mode-select">Auto Lane / Boundary Mode</label>
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <label for="line-mode-select">Auto Lane / Boundary Mode</label>
+            <button type="button" class="info-trigger" data-ref="boundary" title="View Boundary Diagram">ℹ️</button>
+          </div>
           <select id="line-mode-select" class="speed-select">
             <option value="box" selected>🎯 4-Way Intersection Box (Auto Centered)</option>
             <option value="horizontal">➖ Single Horizontal Boundary Line</option>
@@ -98,7 +101,10 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
           </select>
         </div>
         <div class="field">
-          <label for="speed-select">Analysis &amp; Stream Speed</label>
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <label for="speed-select">Analysis &amp; Stream Speed</label>
+            <button type="button" class="info-trigger" data-ref="speed" title="View Speed Explanation">ℹ️</button>
+          </div>
           <select id="speed-select" class="speed-select">
             <option value="2" selected>⚡ 2x Fast-Forward (200% Speed)</option>
             <option value="1">⏱️ 1x Normal Speed (100% Speed)</option>
@@ -125,7 +131,10 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
             <input type="checkbox" id="toggle-in" checked hidden>
             <img src="/static/img/in_flow.png" alt="IN Traffic" class="flow-card-img">
             <div class="flow-card-info">
-              <span class="flow-title">🟢 IN Flow</span>
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span class="flow-title">🟢 IN Flow</span>
+                <button type="button" class="info-trigger inline-info" data-ref="in_flow" title="View visual road reference">ℹ️</button>
+              </div>
               <span class="flow-sub">Incoming vehicles</span>
             </div>
             <span class="card-badge">ACTIVE</span>
@@ -135,7 +144,10 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
             <input type="checkbox" id="toggle-out" checked hidden>
             <img src="/static/img/out_flow.png" alt="OUT Traffic" class="flow-card-img">
             <div class="flow-card-info">
-              <span class="flow-title">🔴 OUT Flow</span>
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span class="flow-title">🔴 OUT Flow</span>
+                <button type="button" class="info-trigger inline-info" data-ref="out_flow" title="View visual road reference">ℹ️</button>
+              </div>
               <span class="flow-sub">Outgoing vehicles</span>
             </div>
             <span class="card-badge">ACTIVE</span>
@@ -144,16 +156,20 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 
         <!-- Naming Terminology & Quick Swaps -->
         <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;">
-          <div class="terminology-group" style="display: flex; gap: 6px;">
+          <div class="terminology-group" style="display: flex; gap: 6px; align-items: center;">
             <label class="radio-chip" data-tip="Labels traffic direction as IN / OUT"><input type="radio" name="direction_mode" value="IN_OUT" checked hidden> <span>IN / OUT</span></label>
             <label class="radio-chip" data-tip="Labels traffic direction as Coming / Going"><input type="radio" name="direction_mode" value="COMING_GOING" hidden> <span>COMING / GOING</span></label>
             <label class="radio-chip" data-tip="Labels traffic direction as Forward / Backward"><input type="radio" name="direction_mode" value="FORWARD_BACKWARD" hidden> <span>FORWARD / BACKWARD</span></label>
+            <button type="button" class="info-trigger inline-info" data-ref="terminology" title="View Naming Terminology Diagram">ℹ️</button>
           </div>
 
-          <label class="chip-toggle" data-tip="Flips direction normal vector to swap IN and OUT">
-            <input type="checkbox" id="invert-check" hidden>
-            <span>🔄 Reverse Direction</span>
-          </label>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <label class="chip-toggle" data-tip="Flips direction normal vector to swap IN and OUT">
+              <input type="checkbox" id="invert-check" hidden>
+              <span>🔄 Reverse Direction</span>
+            </label>
+            <button type="button" class="info-trigger inline-info" data-ref="reverse" title="View Direction Swap Reference">ℹ️</button>
+          </div>
         </div>
 
         <!-- Compass Boundary Side Lines -->
@@ -161,6 +177,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
           <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 10px;">
             <img src="/static/img/compass.png" alt="Compass" style="width: 18px; height: 18px; border-radius: 4px; object-fit: cover;">
             <span style="font-size: 0.8rem; color: var(--text-dim); font-weight: 600;">Active Side Lines</span>
+            <button type="button" class="info-trigger inline-info" data-ref="compass" title="View Compass Boundary Diagram">ℹ️</button>
           </div>
           <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;" id="side-lines-container">
             <label class="side-chip" data-tip="Tracks vehicles crossing the top North line"><input type="checkbox" class="line-check" value="North" checked hidden> <span>⬆️ North</span></label>
@@ -282,6 +299,39 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     <div class="modal-footer">
       <button id="modal-edit-btn" type="button" class="secondary" style="padding: 10px 18px; border-radius: 8px;">✏️ Edit Settings</button>
       <button id="modal-confirm-btn" type="button" class="primary-launch" style="padding: 10px 22px; border-radius: 8px; font-weight: 700; background: linear-gradient(135deg, #3ddc84, #10b981); color: #000; border: none; cursor: pointer; box-shadow: 0 4px 15px rgba(61, 220, 132, 0.3);">🚀 Launch AI Counting Engine</button>
+    </div>
+  </div>
+</div>
+
+<!-- Visual Feature Reference Modal (i Icon Popup) -->
+<div id="info-modal" class="modal-overlay" hidden>
+  <div class="modal-card" style="max-width: 580px;">
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(67, 185, 204, 0.15); border: 1px solid var(--accent); display: flex; align-items: center; justify-content: center; font-size: 1rem; color: var(--accent);">ℹ️</div>
+        <div>
+          <h2 id="info-modal-title" style="margin: 0; font-size: 1.05rem; color: #fff; font-weight: 700;">Visual Feature Reference</h2>
+          <p style="margin: 2px 0 0 0; font-size: 0.74rem; color: var(--text-dim);">Understand what the AI engine will count when this option is enabled</p>
+        </div>
+      </div>
+      <button id="info-modal-close" type="button" class="modal-close-x">&times;</button>
+    </div>
+
+    <div class="modal-body" style="align-items: center; text-align: center;">
+      <!-- Reference Diagram -->
+      <div style="width: 100%; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); background: #08090f; padding: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); box-sizing: border-box;">
+        <img id="info-modal-img" src="/static/img/in_flow.png" alt="Road Reference" style="width: 100%; max-height: 220px; object-fit: contain; display: block; margin: 0 auto; border-radius: 8px;">
+      </div>
+
+      <!-- Explanation Box -->
+      <div class="summary-highlight-box" style="width: 100%; text-align: left; box-sizing: border-box;">
+        <span id="info-modal-tag" class="summary-box-title">🟢 WHAT WILL IT COUNT IF ENABLED?</span>
+        <p id="info-modal-desc" class="summary-box-text">When enabled, the system will track vehicles entering the road intersection.</p>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button id="info-modal-ok" type="button" class="secondary" style="padding: 8px 20px; border-radius: 8px;">Got It</button>
     </div>
   </div>
 </div>
