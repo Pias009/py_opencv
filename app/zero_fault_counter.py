@@ -155,7 +155,16 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
     for result in results_generator:
         if job.get("cancel"):
             job["status"] = "cancelled"
-            break
+            break        # Refresh active button state rules dynamically per frame
+        enable_in = bool(job.get("enable_in", True))
+        enable_out = bool(job.get("enable_out", True))
+        count_scope_mode = str(job.get("count_scope_mode", "active_only"))
+        raw_in = job.get("enabled_lines_in")
+        enabled_lines_in = set(raw_in) if raw_in is not None else None
+        raw_out = job.get("enabled_lines_out")
+        enabled_lines_out = set(raw_out) if raw_out is not None else None
+        raw_enabled_lines = job.get("enabled_lines")
+        enabled_lines = set(raw_enabled_lines) if raw_enabled_lines is not None else {ln.name for ln in lines}
 
         # Check for dynamic live direction toggle from UI
         if bool(job.get("invert_direction")) != inverted_state:
@@ -243,15 +252,21 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                                 dot_product = dx * ln.nx + dy * ln.ny
 
                                 is_in = dot_product > 0
-                                if is_in and not enable_in:
-                                    continue
-                                if not is_in and not enable_out:
-                                    continue
-
-                                if is_in:
-                                    ln.in_count += 1
+                                if count_scope_mode == "active_only":
+                                    if is_in:
+                                        if not enable_in or (enabled_lines_in and ln.name not in enabled_lines_in):
+                                            continue
+                                        ln.in_count += 1
+                                    else:
+                                        if not enable_out or (enabled_lines_out and ln.name not in enabled_lines_out):
+                                            continue
+                                        ln.out_count += 1
                                 else:
-                                    ln.out_count += 1
+                                    # "all_road" mode: count all traffic regardless of active filters
+                                    if is_in:
+                                        ln.in_count += 1
+                                    else:
+                                        ln.out_count += 1
 
                                 tr["counted_lines"].add(ln.name)
                                 total_count += 1

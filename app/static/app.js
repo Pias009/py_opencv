@@ -107,32 +107,67 @@ function updateSidebarRules() {
   const sideOut = document.getElementById("side-out-val");
   const sideLines = document.getElementById("side-lines-val");
 
-  const radio = document.querySelector('input[name="direction_mode"]:checked');
   const toggleIn = document.getElementById("toggle-in");
   const toggleOut = document.getElementById("toggle-out");
-  const activeLines = document.querySelectorAll(".line-check:checked").length;
+  const badgeIn = document.getElementById("badge-in");
+  const badgeOut = document.getElementById("badge-out");
 
-  if (sideNaming && radio) {
-    const map = { "IN_OUT": "IN / OUT", "COMING_GOING": "COMING / GOING", "FORWARD_BACKWARD": "FORWARD / BACKWARD" };
-    sideNaming.textContent = map[radio.value] || "IN / OUT";
+  const inChecked = document.querySelectorAll(".line-in-check:checked").length;
+  const outChecked = document.querySelectorAll(".line-out-check:checked").length;
+  const totalActiveRules = (toggleIn && toggleIn.checked ? inChecked : 0) + (toggleOut && toggleOut.checked ? outChecked : 0);
+
+  if (sideNaming) {
+    sideNaming.textContent = "IN / OUT";
   }
 
   if (sideIn && toggleIn) {
-    sideIn.textContent = toggleIn.checked ? "ENABLED" : "OFF";
+    sideIn.textContent = toggleIn.checked ? `ENABLED (${inChecked} Sides)` : "OFF";
     sideIn.style.color = toggleIn.checked ? "#3ddc84" : "var(--text-dim)";
-    const badgeIn = document.querySelector(".flow-in .card-badge");
     if (badgeIn) badgeIn.textContent = toggleIn.checked ? "ACTIVE" : "OFF";
   }
 
   if (sideOut && toggleOut) {
-    sideOut.textContent = toggleOut.checked ? "ENABLED" : "OFF";
+    sideOut.textContent = toggleOut.checked ? `ENABLED (${outChecked} Sides)` : "OFF";
     sideOut.style.color = toggleOut.checked ? "#ff4d4d" : "var(--text-dim)";
-    const badgeOut = document.querySelector(".flow-out .card-badge");
     if (badgeOut) badgeOut.textContent = toggleOut.checked ? "ACTIVE" : "OFF";
   }
 
   if (sideLines) {
-    sideLines.textContent = `${activeLines} Line${activeLines !== 1 ? 's' : ''}`;
+    sideLines.textContent = `${totalActiveRules} Active Rule${totalActiveRules !== 1 ? 's' : ''}`;
+  }
+
+  pushLiveRuleUpdate();
+}
+
+async function pushLiveRuleUpdate() {
+  if (!currentJobId) return;
+  const toggleIn = document.getElementById("toggle-in");
+  const toggleOut = document.getElementById("toggle-out");
+  const countScopeRadio = document.querySelector('input[name="count_scope_mode"]:checked');
+
+  const enableIn = toggleIn ? toggleIn.checked : true;
+  const enableOut = toggleOut ? toggleOut.checked : true;
+  const countScopeMode = countScopeRadio ? countScopeRadio.value : "active_only";
+
+  const enabledLinesIn = Array.from(document.querySelectorAll(".line-in-check:checked")).map(c => c.value);
+  const enabledLinesOut = Array.from(document.querySelectorAll(".line-out-check:checked")).map(c => c.value);
+  const allEnabledLines = Array.from(new Set([...enabledLinesIn, ...enabledLinesOut]));
+
+  try {
+    await fetch(`/api/update_rules/${currentJobId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        enable_in: enableIn,
+        enable_out: enableOut,
+        count_scope_mode: countScopeMode,
+        enabled_lines: allEnabledLines,
+        enabled_lines_in: enabledLinesIn,
+        enabled_lines_out: enabledLinesOut
+      })
+    });
+  } catch (e) {
+    console.error("Live rule update error:", e);
   }
 }
 
@@ -142,8 +177,8 @@ if (masterToggleBtn) {
   let allLinesOn = true;
   masterToggleBtn.addEventListener("click", () => {
     allLinesOn = !allLinesOn;
-    document.querySelectorAll(".line-check").forEach(chk => chk.checked = allLinesOn);
-    masterToggleBtn.textContent = allLinesOn ? "⚡ Toggle All Lines (OFF)" : "⚡ Toggle All Lines (ON)";
+    document.querySelectorAll(".line-in-check, .line-out-check").forEach(chk => chk.checked = allLinesOn);
+    masterToggleBtn.textContent = allLinesOn ? "⚡ Toggle All Sides (OFF)" : "⚡ Toggle All Sides (ON)";
     updateSidebarRules();
   });
 }
@@ -160,8 +195,12 @@ if (preset1SideBtn) {
     if (toggleIn) toggleIn.checked = true;
     if (toggleOut) toggleOut.checked = false;
 
+    // Check North IN, uncheck others
+    document.querySelectorAll(".line-in-check").forEach(chk => chk.checked = (chk.value === "North"));
+    document.querySelectorAll(".line-out-check").forEach(chk => chk.checked = false);
+
     updateSidebarRules();
-    alert("🚗 Configured for 1-Side Near Lane Counting!\n- Line: Vertical Boundary Line\n- Flow: IN Only (OUT Disabled)\n\nTip: Use '🔄 Reverse Direction' if you need to flip counting to the other lane.");
+    alert("🚗 Configured for 1-Side Lane Counting!\n- Flow: IN Only (OUT Disabled)\n- Active Lane: North IN Side\n\nOnly vehicles entering through North IN will be counted in Total Vehicle Count.");
   });
 }
 
@@ -196,7 +235,7 @@ document.querySelectorAll("[data-tip]").forEach(elem => {
   });
 });
 
-document.querySelectorAll('input[name="direction_mode"], #toggle-in, #toggle-out, .line-check').forEach(input => {
+document.querySelectorAll('#toggle-in, #toggle-out, .line-in-check, .line-out-check, input[name="count_scope_mode"]').forEach(input => {
   input.addEventListener("change", updateSidebarRules);
 });
 
@@ -217,21 +256,21 @@ async function startJob() {
 
   const speedSelect = document.getElementById("speed-select");
   const lineModeSelect = document.getElementById("line-mode-select");
-  const invertCheck = document.getElementById("invert-check");
 
   const toggleIn = document.getElementById("toggle-in");
   const toggleOut = document.getElementById("toggle-out");
 
-  const directionRadio = document.querySelector('input[name="direction_mode"]:checked');
+  const countScopeRadio = document.querySelector('input[name="count_scope_mode"]:checked');
+  const countScopeMode = countScopeRadio ? countScopeRadio.value : "active_only";
 
   const speed = speedSelect ? speedSelect.value : "2";
   const lineMode = lineModeSelect ? lineModeSelect.value : "box";
-  const invert = invertCheck ? invertCheck.checked : false;
   const enableIn = toggleIn ? toggleIn.checked : true;
   const enableOut = toggleOut ? toggleOut.checked : true;
-  const directionMode = directionRadio ? directionRadio.value : "IN_OUT";
 
-  const enabledLines = Array.from(document.querySelectorAll(".line-check:checked")).map(c => c.value);
+  const enabledLinesIn = Array.from(document.querySelectorAll(".line-in-check:checked")).map(c => c.value);
+  const enabledLinesOut = Array.from(document.querySelectorAll(".line-out-check:checked")).map(c => c.value);
+  const allEnabledLines = Array.from(new Set([...enabledLinesIn, ...enabledLinesOut]));
 
   try {
     const uploadedFilePath = await uploadFileInChunks(file, (pct) => {
@@ -247,11 +286,12 @@ async function startJob() {
     startFormData.append("filename", file.name);
     startFormData.append("speed", speed);
     startFormData.append("line_mode", lineMode);
-    startFormData.append("invert", invert);
     startFormData.append("enable_in", enableIn);
     startFormData.append("enable_out", enableOut);
-    startFormData.append("direction_mode", directionMode);
-    startFormData.append("enabled_lines", enabledLines.join(","));
+    startFormData.append("count_scope_mode", countScopeMode);
+    startFormData.append("enabled_lines", allEnabledLines.join(","));
+    startFormData.append("enabled_lines_in", enabledLinesIn.join(","));
+    startFormData.append("enabled_lines_out", enabledLinesOut.join(","));
 
     const res = await fetch("/api/start", { method: "POST", body: startFormData });
     const data = await res.json();
@@ -564,6 +604,12 @@ const infoModalClose = document.getElementById("info-modal-close");
 const infoModalOk = document.getElementById("info-modal-ok");
 
 const INFO_REFERENCES = {
+  "counting_scope": {
+    title: "📊 Counting Scope (Active Rules vs All Traffic)",
+    img: "/static/img/intersection_box.png",
+    tag: "📊 COUNTING SCOPE EXPLANATION",
+    desc: "<b>🎯 Count Active Rules Only:</b> Total Vehicle Count will ONLY increment when vehicles cross an enabled side and direction. Vehicles on disabled sides or turned-off directions are ignored.<br><br><b>🌐 Count All Road Traffic:</b> Total Vehicle Count will increment for EVERY vehicle detected on any line across the entire road."
+  },
   "boundary": {
     title: "🎯 Boundary Modes (Box, Horizontal, Vertical)",
     img: "/static/img/intersection_box.png",
@@ -588,11 +634,23 @@ const INFO_REFERENCES = {
     tag: "🔴 WHAT WILL IT COUNT IF ENABLED?",
     desc: "<b>When 🔴 OUT Flow is ACTIVE:</b> The AI detector will track and count all vehicles moving OUTWARD (leaving the intersection or moving away from the focal direction).<br><br><i>If un-checked/disabled, outgoing vehicles will NOT be counted.</i>"
   },
-  "terminology": {
-    title: "🏷️ Direction Naming Terminology",
+  "in_out": {
+    title: "🏷️ IN / OUT Naming Standard",
     img: "/static/img/in_flow.png",
     tag: "🏷️ REPORT & COUNTER LABELS",
-    desc: "Allows you to select custom naming for reports and live counters:<br><br>• <b>IN / OUT</b>: Default traffic notation.<br>• <b>COMING / GOING</b>: Intuitive notation for highway lanes.<br>• <b>FORWARD / BACKWARD</b>: Directional notation for 1-side road tracking."
+    desc: "Labels traffic movement as <b>IN</b> (vehicles entering) and <b>OUT</b> (vehicles exiting). This is the standard traffic engineering convention."
+  },
+  "coming_going": {
+    title: "🚗 COMING / GOING Naming Standard",
+    img: "/static/img/in_flow.png",
+    tag: "🏷️ REPORT & COUNTER LABELS",
+    desc: "Labels traffic movement as <b>COMING</b> (vehicles approaching camera) and <b>GOING</b> (vehicles driving away). Perfect for highway surveillance."
+  },
+  "forward_backward": {
+    title: "➡️ FORWARD / BACKWARD Naming Standard",
+    img: "/static/img/in_flow.png",
+    tag: "🏷️ REPORT & COUNTER LABELS",
+    desc: "Labels traffic movement as <b>FORWARD</b> (downstream flow) and <b>BACKWARD</b> (reverse flow). Ideal for single-lane flow monitoring."
   },
   "reverse": {
     title: "🔄 Reverse Direction (Vector Inversion)",
@@ -601,10 +659,34 @@ const INFO_REFERENCES = {
     desc: "Flips the vector normal of all boundary lines by 180°. Use this if IN and OUT are reversed on your video or if you want to count the opposite lane on a 1-side road camera!"
   },
   "compass": {
-    title: "🧭 Compass Boundary Side Lines (North, South, West, East)",
+    title: "🧭 Compass Boundary Side Lines",
     img: "/static/img/compass.png",
     tag: "🧭 WHAT DO SIDE LINES COUNT?",
-    desc: "Tracks vehicles crossing specific boundary sides:<br><br>• <b>North Line:</b> Top boundary.<br>• <b>South Line:</b> Bottom boundary.<br>• <b>West Line:</b> Left boundary.<br>• <b>East Line:</b> Right boundary.<br><br>Un-checking a line disables tracking for that specific side of the intersection."
+    desc: "Tracks vehicles crossing specific boundary sides:<br><br>• <b>North Line:</b> Top boundary.<br>• <b>South Line:</b> Bottom boundary.<br>• <b>West Line:</b> Left boundary.<br>• <b>East Line:</b> Right boundary."
+  },
+  "north": {
+    title: "⬆️ North Boundary Line",
+    img: "/static/img/compass.png",
+    tag: "⬆️ TOP BOUNDARY LINE",
+    desc: "Tracks and counts all vehicles crossing the <b>TOP (North)</b> line of the intersection boundary box."
+  },
+  "south": {
+    title: "⬇️ South Boundary Line",
+    img: "/static/img/compass.png",
+    tag: "⬇️ BOTTOM BOUNDARY LINE",
+    desc: "Tracks and counts all vehicles crossing the <b>BOTTOM (South)</b> line of the intersection boundary box."
+  },
+  "west": {
+    title: "⬅️ West Boundary Line",
+    img: "/static/img/compass.png",
+    tag: "⬅️ LEFT BOUNDARY LINE",
+    desc: "Tracks and counts all vehicles crossing the <b>LEFT (West)</b> line of the intersection boundary box."
+  },
+  "east": {
+    title: "➡️ East Boundary Line",
+    img: "/static/img/compass.png",
+    tag: "➡️ RIGHT BOUNDARY LINE",
+    desc: "Tracks and counts all vehicles crossing the <b>RIGHT (East)</b> line of the intersection boundary box."
   }
 };
 

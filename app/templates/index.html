@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vehicle Counter</title>
-<link rel="stylesheet" href="/static/style.css?v=3.0">
+<link rel="stylesheet" href="/static/style.css?v=7.0">
 </head>
 <body>
 <!--
@@ -112,80 +112,119 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
           </select>
         </div>
       </div>
-      <div class="toggle-section" style="margin-top: 16px; padding: 16px; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 12px;">
+      <div class="toggle-section">
         <!-- Header & Quick Presets -->
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;">
-          <h3 style="margin: 0; font-size: 0.95rem; color: #fff; font-weight: 600; display: flex; align-items: center; gap: 8px;">
-            <img src="/static/img/intersection_box.png" alt="Intersection" style="width: 24px; height: 24px; border-radius: 6px; object-fit: cover;">
-            <span>Counting &amp; Flow Options</span>
+        <div class="toggle-header">
+          <h3 class="toggle-header-title">
+            <img src="/static/img/intersection_box.png" alt="Intersection" class="header-icon">
+            <span>Traffic Direction &amp; Lane Counting Rules</span>
           </h3>
-          <div style="display: flex; gap: 6px;">
-            <button id="preset-1side-btn" type="button" class="secondary" style="font-size: 0.73rem; padding: 4px 10px; border-radius: 16px; border-color: #3ddc84; color: #3ddc84; background: rgba(61,220,132,0.1);" data-tip="1-Click setup to count ONLY the 1-side lane near the camera">🚗 1-Side Lane Only</button>
-            <button id="master-toggle-btn" type="button" class="secondary" style="font-size: 0.75rem; padding: 5px 12px; border-radius: 20px;">⚡ Toggle All Lines</button>
+          <div class="preset-group">
+            <button id="preset-1side-btn" type="button" class="preset-chip preset-highlight" data-tip="1-Click setup: Count ONLY 1-side incoming lane near camera">🚗 1-Side Lane Setup</button>
+            <button id="master-toggle-btn" type="button" class="preset-chip" data-tip="Enable or disable all boundary lines">⚡ Toggle All Sides</button>
           </div>
         </div>
 
-        <!-- 2 Big Visual Flow Cards (IN / OUT) -->
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
-          <label class="flow-card flow-in" data-tip="Counts all incoming vehicles entering the intersection">
-            <input type="checkbox" id="toggle-in" checked hidden>
-            <img src="/static/img/in_flow.png" alt="IN Traffic" class="flow-card-img">
-            <div class="flow-card-info">
-              <div style="display: flex; align-items: center; gap: 6px;">
-                <span class="flow-title">🟢 IN Flow</span>
-                <button type="button" class="info-trigger inline-info" data-ref="in_flow" title="View visual road reference">ℹ️</button>
-              </div>
-              <span class="flow-sub">Incoming vehicles</span>
-            </div>
-            <span class="card-badge">ACTIVE</span>
-          </label>
-
-          <label class="flow-card flow-out" data-tip="Counts all outgoing vehicles leaving the intersection">
-            <input type="checkbox" id="toggle-out" checked hidden>
-            <img src="/static/img/out_flow.png" alt="OUT Traffic" class="flow-card-img">
-            <div class="flow-card-info">
-              <div style="display: flex; align-items: center; gap: 6px;">
-                <span class="flow-title">🔴 OUT Flow</span>
-                <button type="button" class="info-trigger inline-info" data-ref="out_flow" title="View visual road reference">ℹ️</button>
-              </div>
-              <span class="flow-sub">Outgoing vehicles</span>
-            </div>
-            <span class="card-badge">ACTIVE</span>
-          </label>
-        </div>
-
-        <!-- Naming Terminology & Quick Swaps -->
-        <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;">
-          <div class="terminology-group" style="display: flex; gap: 6px; align-items: center;">
-            <label class="radio-chip" data-tip="Labels traffic direction as IN / OUT"><input type="radio" name="direction_mode" value="IN_OUT" checked hidden> <span>IN / OUT</span></label>
-            <label class="radio-chip" data-tip="Labels traffic direction as Coming / Going"><input type="radio" name="direction_mode" value="COMING_GOING" hidden> <span>COMING / GOING</span></label>
-            <label class="radio-chip" data-tip="Labels traffic direction as Forward / Backward"><input type="radio" name="direction_mode" value="FORWARD_BACKWARD" hidden> <span>FORWARD / BACKWARD</span></label>
-            <button type="button" class="info-trigger inline-info" data-ref="terminology" title="View Naming Terminology Diagram">ℹ️</button>
-          </div>
-
-          <div style="display: flex; align-items: center; gap: 6px;">
-            <label class="chip-toggle" data-tip="Flips direction normal vector to swap IN and OUT">
-              <input type="checkbox" id="invert-check" hidden>
-              <span>🔄 Reverse Direction</span>
+        <!-- Counting Scope Mode Selector -->
+        <div class="counting-mode-bar">
+          <span class="mode-bar-label">📊 Counting Scope:</span>
+          <div class="mode-toggle-group">
+            <label class="mode-chip" data-tip="Count ONLY vehicles that match the active side & flow buttons below">
+              <input type="radio" name="count_scope_mode" value="active_only" checked hidden>
+              <span>🎯 Count Active Rules Only</span>
             </label>
-            <button type="button" class="info-trigger inline-info" data-ref="reverse" title="View Direction Swap Reference">ℹ️</button>
+            <label class="mode-chip" data-tip="Count ALL vehicles detected on all lines regardless of active filters">
+              <input type="radio" name="count_scope_mode" value="all_road" hidden>
+              <span>🌐 Count All Road Traffic</span>
+            </label>
+          </div>
+          <button type="button" class="info-trigger" data-ref="counting_scope" title="View Counting Scope Info">ℹ️</button>
+        </div>
+
+        <!-- 🟢 IN FLOW BOX -->
+        <div class="flow-config-box flow-config-in">
+          <div class="flow-box-header">
+            <label class="flow-main-toggle" data-tip="Enable or disable IN vehicle counting">
+              <input type="checkbox" id="toggle-in" checked hidden>
+              <div class="flow-main-content">
+                <span class="flow-main-icon">🟢</span>
+                <div class="flow-main-text">
+                  <span class="flow-main-title">IN Flow (Incoming Vehicles)</span>
+                  <span class="flow-main-sub">Count vehicles entering the intersection</span>
+                </div>
+              </div>
+              <div class="flow-main-actions">
+                <span class="flow-main-badge" id="badge-in">ACTIVE</span>
+                <button type="button" class="info-trigger" data-ref="in_flow" title="View IN Flow Diagram">ℹ️</button>
+              </div>
+            </label>
+          </div>
+
+          <div class="flow-box-sides" id="in-sides-box">
+            <span class="sides-label">Select Which Sides / Lanes to Count for IN:</span>
+            <div class="sides-grid">
+              <label class="side-chip side-in-chip" data-tip="Count IN vehicles crossing North side">
+                <input type="checkbox" class="line-in-check" value="North" checked hidden>
+                <span>⬆️ North IN</span>
+              </label>
+              <label class="side-chip side-in-chip" data-tip="Count IN vehicles crossing South side">
+                <input type="checkbox" class="line-in-check" value="South" checked hidden>
+                <span>⬇️ South IN</span>
+              </label>
+              <label class="side-chip side-in-chip" data-tip="Count IN vehicles crossing West side">
+                <input type="checkbox" class="line-in-check" value="West" checked hidden>
+                <span>⬅️ West IN</span>
+              </label>
+              <label class="side-chip side-in-chip" data-tip="Count IN vehicles crossing East side">
+                <input type="checkbox" class="line-in-check" value="East" checked hidden>
+                <span>➡️ East IN</span>
+              </label>
+            </div>
           </div>
         </div>
 
-        <!-- Compass Boundary Side Lines -->
-        <div style="border-top: 1px solid rgba(255,255,255,0.06); padding-top: 12px;">
-          <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 10px;">
-            <img src="/static/img/compass.png" alt="Compass" style="width: 18px; height: 18px; border-radius: 4px; object-fit: cover;">
-            <span style="font-size: 0.8rem; color: var(--text-dim); font-weight: 600;">Active Side Lines</span>
-            <button type="button" class="info-trigger inline-info" data-ref="compass" title="View Compass Boundary Diagram">ℹ️</button>
+        <!-- 🔴 OUT FLOW BOX -->
+        <div class="flow-config-box flow-config-out" style="margin-top: 14px;">
+          <div class="flow-box-header">
+            <label class="flow-main-toggle" data-tip="Enable or disable OUT vehicle counting">
+              <input type="checkbox" id="toggle-out" checked hidden>
+              <div class="flow-main-content">
+                <span class="flow-main-icon">🔴</span>
+                <div class="flow-main-text">
+                  <span class="flow-main-title">OUT Flow (Outgoing Vehicles)</span>
+                  <span class="flow-main-sub">Count vehicles exiting the intersection</span>
+                </div>
+              </div>
+              <div class="flow-main-actions">
+                <span class="flow-main-badge" id="badge-out">ACTIVE</span>
+                <button type="button" class="info-trigger" data-ref="out_flow" title="View OUT Flow Diagram">ℹ️</button>
+              </div>
+            </label>
           </div>
-          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;" id="side-lines-container">
-            <label class="side-chip" data-tip="Tracks vehicles crossing the top North line"><input type="checkbox" class="line-check" value="North" checked hidden> <span>⬆️ North</span></label>
-            <label class="side-chip" data-tip="Tracks vehicles crossing the bottom South line"><input type="checkbox" class="line-check" value="South" checked hidden> <span>⬇️ South</span></label>
-            <label class="side-chip" data-tip="Tracks vehicles crossing the left West line"><input type="checkbox" class="line-check" value="West" checked hidden> <span>⬅️ West</span></label>
-            <label class="side-chip" data-tip="Tracks vehicles crossing the right East line"><input type="checkbox" class="line-check" value="East" checked hidden> <span>➡️ East</span></label>
+
+          <div class="flow-box-sides" id="out-sides-box">
+            <span class="sides-label">Select Which Sides / Lanes to Count for OUT:</span>
+            <div class="sides-grid">
+              <label class="side-chip side-out-chip" data-tip="Count OUT vehicles crossing North side">
+                <input type="checkbox" class="line-out-check" value="North" checked hidden>
+                <span>⬆️ North OUT</span>
+              </label>
+              <label class="side-chip side-out-chip" data-tip="Count OUT vehicles crossing South side">
+                <input type="checkbox" class="line-out-check" value="South" checked hidden>
+                <span>⬇️ South OUT</span>
+              </label>
+              <label class="side-chip side-out-chip" data-tip="Count OUT vehicles crossing West side">
+                <input type="checkbox" class="line-out-check" value="West" checked hidden>
+                <span>⬅️ West OUT</span>
+              </label>
+              <label class="side-chip side-out-chip" data-tip="Count OUT vehicles crossing East side">
+                <input type="checkbox" class="line-out-check" value="East" checked hidden>
+                <span>➡️ East OUT</span>
+              </label>
+            </div>
           </div>
         </div>
+      </div>
       </div>
 
       <button id="start-btn" style="margin-top: 16px;">Start Counting</button>
@@ -336,6 +375,6 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   </div>
 </div>
 
-<script src="/static/app.js?v=3.0"></script>
+<script src="/static/app.js?v=7.0"></script>
 </body>
 </html>

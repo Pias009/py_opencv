@@ -258,10 +258,17 @@ def api_start():
     invert_direction = request.form.get("invert", "false").lower() == "true"
     enable_in = request.form.get("enable_in", "true").lower() == "true"
     enable_out = request.form.get("enable_out", "true").lower() == "true"
+    count_scope_mode = request.form.get("count_scope_mode", "active_only")
     direction_mode = request.form.get("direction_mode", "IN_OUT")
 
     enabled_lines_raw = request.form.get("enabled_lines", "North,South,West,East,Line1")
     enabled_lines = [x.strip() for x in enabled_lines_raw.split(",") if x.strip()]
+
+    raw_in = request.form.get("enabled_lines_in", "")
+    enabled_lines_in = [x.strip() for x in raw_in.split(",") if x.strip()] if raw_in else None
+
+    raw_out = request.form.get("enabled_lines_out", "")
+    enabled_lines_out = [x.strip() for x in raw_out.split(",") if x.strip()] if raw_out else None
 
     job_id = uuid.uuid4().hex
     job = {
@@ -280,7 +287,10 @@ def api_start():
         "invert_direction": invert_direction,
         "enable_in": enable_in,
         "enable_out": enable_out,
+        "count_scope_mode": count_scope_mode,
         "enabled_lines": enabled_lines,
+        "enabled_lines_in": enabled_lines_in,
+        "enabled_lines_out": enabled_lines_out,
         "direction_mode": direction_mode,
         "speed_mode": f"{vid_stride}x Fast-Forward",
         "reanalyzed": 0,
@@ -301,6 +311,29 @@ def api_invert(job_id):
         return jsonify({"error": "Unknown job"}), 404
     job["invert_direction"] = not job.get("invert_direction", False)
     return jsonify({"inverted": job["invert_direction"]})
+
+
+@app.route("/api/update_rules/<job_id>", methods=["POST"])
+def api_update_rules(job_id):
+    job = jobs.get(job_id)
+    if not job:
+        return jsonify({"error": "Unknown job"}), 404
+    data = request.get_json(silent=True) or {}
+    if "enable_in" in data:
+        job["enable_in"] = bool(data["enable_in"])
+    if "enable_out" in data:
+        job["enable_out"] = bool(data["enable_out"])
+    if "count_scope_mode" in data:
+        job["count_scope_mode"] = str(data["count_scope_mode"])
+    if "invert" in data:
+        job["invert_direction"] = bool(data["invert"])
+    if "enabled_lines" in data:
+        job["enabled_lines"] = data["enabled_lines"]
+    if "enabled_lines_in" in data:
+        job["enabled_lines_in"] = data["enabled_lines_in"]
+    if "enabled_lines_out" in data:
+        job["enabled_lines_out"] = data["enabled_lines_out"]
+    return jsonify({"ok": True})
 
 
 @app.route("/api/status/<job_id>")
