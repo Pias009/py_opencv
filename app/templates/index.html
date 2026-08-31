@@ -36,6 +36,31 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
       <span class="side-status" id="side-status">Waiting for a video&hellip;</span>
     </div>
 
+    <!-- Active Configuration & Hover Live Preview Shift Block -->
+    <div class="side-block" id="side-config-block" style="border-left: 3px solid var(--accent); transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);">
+      <span class="side-label" style="display: flex; justify-content: space-between; align-items: center;">
+        <span>Active Rules</span>
+        <span id="side-config-badge" style="font-size: 0.65rem; background: rgba(61,220,132,0.15); color: #3ddc84; padding: 2px 6px; border-radius: 4px; font-weight: 600;">ACTIVE</span>
+      </span>
+      <div id="sidebar-rules-summary" style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px; font-size: 0.78rem; color: var(--text-dim);">
+        <div class="rule-item" data-rule="naming" style="display: flex; justify-content: space-between;">
+          <span>Naming:</span><span id="side-naming-val" style="color: var(--text); font-weight: 600;">IN / OUT</span>
+        </div>
+        <div class="rule-item" data-rule="in" style="display: flex; justify-content: space-between;">
+          <span>Incoming:</span><span id="side-in-val" style="color: #3ddc84; font-weight: 600;">ENABLED</span>
+        </div>
+        <div class="rule-item" data-rule="out" style="display: flex; justify-content: space-between;">
+          <span>Outgoing:</span><span id="side-out-val" style="color: #ff4d4d; font-weight: 600;">ENABLED</span>
+        </div>
+        <div class="rule-item" data-rule="lines" style="display: flex; justify-content: space-between;">
+          <span>Active Lines:</span><span id="side-lines-val" style="color: var(--accent); font-weight: 600;">4 Lines</span>
+        </div>
+      </div>
+      <div id="sidebar-hover-tip" style="margin-top: 8px; font-size: 0.72rem; color: var(--text-dim); font-style: italic; border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 6px;">
+        Hover over toggles to preview rule shift.
+      </div>
+    </div>
+
     <div class="side-block" id="side-lines-block" hidden>
       <span class="side-label">By direction</span>
       <div class="line-rows" id="line-rows"></div>
@@ -90,29 +115,29 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
         <div class="field" style="margin-bottom: 12px;">
           <label style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 6px; display: block;">Flow Direction Naming Terminology</label>
           <div class="terminology-group" style="display: flex; gap: 8px;">
-            <label class="radio-chip"><input type="radio" name="direction_mode" value="IN_OUT" checked> <span>IN / OUT</span></label>
-            <label class="radio-chip"><input type="radio" name="direction_mode" value="COMING_GOING"> <span>COMING / GOING</span></label>
-            <label class="radio-chip"><input type="radio" name="direction_mode" value="FORWARD_BACKWARD"> <span>FORWARD / BACKWARD</span></label>
+            <label class="radio-chip" data-tip="Labels traffic direction as IN / OUT on all counters"><input type="radio" name="direction_mode" value="IN_OUT" checked> <span>IN / OUT</span></label>
+            <label class="radio-chip" data-tip="Labels traffic direction as Coming / Going on all counters"><input type="radio" name="direction_mode" value="COMING_GOING"> <span>COMING / GOING</span></label>
+            <label class="radio-chip" data-tip="Labels traffic direction as Forward / Backward on all counters"><input type="radio" name="direction_mode" value="FORWARD_BACKWARD"> <span>FORWARD / BACKWARD</span></label>
           </div>
         </div>
 
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-top: 8px;">
-          <label class="custom-toggle">
+          <label class="custom-toggle" data-tip="Counts all incoming vehicles entering the road intersection">
             <input type="checkbox" id="toggle-in" checked>
             <span class="toggle-label">🟢 Count IN / Coming Traffic</span>
           </label>
 
-          <label class="custom-toggle">
+          <label class="custom-toggle" data-tip="Counts all outgoing vehicles leaving the road intersection">
             <input type="checkbox" id="toggle-out" checked>
             <span class="toggle-label">🔴 Count OUT / Going Traffic</span>
           </label>
 
-          <label class="custom-toggle">
+          <label class="custom-toggle" data-tip="Calculates and displays total overall vehicle count metric">
             <input type="checkbox" id="toggle-total" checked>
             <span class="toggle-label">📊 Enable Total Count Metric</span>
           </label>
 
-          <label class="custom-toggle">
+          <label class="custom-toggle" data-tip="Flips vector normal to swap incoming and outgoing directions">
             <input type="checkbox" id="invert-check">
             <span class="toggle-label">🔄 Swap IN &amp; OUT Directions</span>
           </label>
@@ -121,10 +146,10 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
         <div style="margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 10px;">
           <span style="font-size: 0.78rem; color: var(--text-dim); display: block; margin-bottom: 8px; font-weight: 500;">Side Line Boundaries (Default: ALL ON)</span>
           <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;" id="side-lines-container">
-            <label class="custom-toggle side-toggle"><input type="checkbox" class="line-check" value="North" checked> <span>⬆️ North Line</span></label>
-            <label class="custom-toggle side-toggle"><input type="checkbox" class="line-check" value="South" checked> <span>⬇️ South Line</span></label>
-            <label class="custom-toggle side-toggle"><input type="checkbox" class="line-check" value="West" checked> <span>⬅️ West Line</span></label>
-            <label class="custom-toggle side-toggle"><input type="checkbox" class="line-check" value="East" checked> <span>➡️ East Line</span></label>
+            <label class="custom-toggle side-toggle" data-tip="Tracks vehicles crossing the top North boundary line"><input type="checkbox" class="line-check" value="North" checked> <span>⬆️ North Line</span></label>
+            <label class="custom-toggle side-toggle" data-tip="Tracks vehicles crossing the bottom South boundary line"><input type="checkbox" class="line-check" value="South" checked> <span>⬇️ South Line</span></label>
+            <label class="custom-toggle side-toggle" data-tip="Tracks vehicles crossing the left West boundary line"><input type="checkbox" class="line-check" value="West" checked> <span>⬅️ West Line</span></label>
+            <label class="custom-toggle side-toggle" data-tip="Tracks vehicles crossing the right East boundary line"><input type="checkbox" class="line-check" value="East" checked> <span>➡️ East Line</span></label>
           </div>
         </div>
       </div>

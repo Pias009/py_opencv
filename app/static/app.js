@@ -100,6 +100,38 @@ async function uploadFileInChunks(file, onProgress) {
   return completedFilePath;
 }
 
+// Dynamic Left Sidebar Shift & Live Rules Updater
+function updateSidebarRules() {
+  const sideNaming = document.getElementById("side-naming-val");
+  const sideIn = document.getElementById("side-in-val");
+  const sideOut = document.getElementById("side-out-val");
+  const sideLines = document.getElementById("side-lines-val");
+
+  const radio = document.querySelector('input[name="direction_mode"]:checked');
+  const toggleIn = document.getElementById("toggle-in");
+  const toggleOut = document.getElementById("toggle-out");
+  const activeLines = document.querySelectorAll(".line-check:checked").length;
+
+  if (sideNaming && radio) {
+    const map = { "IN_OUT": "IN / OUT", "COMING_GOING": "COMING / GOING", "FORWARD_BACKWARD": "FORWARD / BACKWARD" };
+    sideNaming.textContent = map[radio.value] || "IN / OUT";
+  }
+
+  if (sideIn && toggleIn) {
+    sideIn.textContent = toggleIn.checked ? "ENABLED" : "OFF";
+    sideIn.style.color = toggleIn.checked ? "#3ddc84" : "var(--text-dim)";
+  }
+
+  if (sideOut && toggleOut) {
+    sideOut.textContent = toggleOut.checked ? "ENABLED" : "OFF";
+    sideOut.style.color = toggleOut.checked ? "#ff4d4d" : "var(--text-dim)";
+  }
+
+  if (sideLines) {
+    sideLines.textContent = `${activeLines} Line${activeLines !== 1 ? 's' : ''}`;
+  }
+}
+
 // Master switch: Toggle all side lines ON / OFF
 const masterToggleBtn = document.getElementById("master-toggle-btn");
 if (masterToggleBtn) {
@@ -108,8 +140,47 @@ if (masterToggleBtn) {
     allLinesOn = !allLinesOn;
     document.querySelectorAll(".line-check").forEach(chk => chk.checked = allLinesOn);
     masterToggleBtn.textContent = allLinesOn ? "⚡ Toggle All Lines (OFF)" : "⚡ Toggle All Lines (ON)";
+    updateSidebarRules();
   });
 }
+
+// Hover Shift Effect on Left Sidebar
+const sideConfigBlock = document.getElementById("side-config-block");
+const sideHoverTip = document.getElementById("sidebar-hover-tip");
+
+document.querySelectorAll("[data-tip]").forEach(elem => {
+  elem.addEventListener("mouseenter", () => {
+    const tip = elem.getAttribute("data-tip");
+    if (sideConfigBlock) {
+      sideConfigBlock.style.transform = "translateX(8px)";
+      sideConfigBlock.style.borderColor = "#3ddc84";
+      sideConfigBlock.style.boxShadow = "0 0 15px rgba(61, 220, 132, 0.2)";
+    }
+    if (sideHoverTip && tip) {
+      sideHoverTip.textContent = `💡 ${tip}`;
+      sideHoverTip.style.color = "#3ddc84";
+    }
+  });
+
+  elem.addEventListener("mouseleave", () => {
+    if (sideConfigBlock) {
+      sideConfigBlock.style.transform = "translateX(0)";
+      sideConfigBlock.style.borderColor = "var(--accent)";
+      sideConfigBlock.style.boxShadow = "none";
+    }
+    if (sideHoverTip) {
+      sideHoverTip.textContent = "Hover over toggles to preview rule shift.";
+      sideHoverTip.style.color = "var(--text-dim)";
+    }
+  });
+});
+
+document.querySelectorAll('input[name="direction_mode"], #toggle-in, #toggle-out, .line-check').forEach(input => {
+  input.addEventListener("change", updateSidebarRules);
+});
+
+// Initialize on page load
+updateSidebarRules();
 
 async function startJob() {
   clearError();
