@@ -278,12 +278,19 @@ function beginRunView() {
   pollTimer = setInterval(pollStatus, 500);
 }
 
-function renderLines(lines) {
+function renderLines(lines, directionMode) {
   const entries = Object.entries(lines || {});
   if (!entries.length) {
     sideLinesBlock.hidden = true;
     return;
   }
+  let inLabel = "in", outLabel = "out";
+  if (directionMode === "COMING_GOING") {
+    inLabel = "coming"; outLabel = "going";
+  } else if (directionMode === "FORWARD_BACKWARD") {
+    inLabel = "forward"; outLabel = "backward";
+  }
+
   sideLinesBlock.hidden = false;
   lineRows.innerHTML = entries.map(([name, v], i) => `
     <div class="line-row">
@@ -291,7 +298,7 @@ function renderLines(lines) {
         <span class="line-dot" style="background:${LINE_COLORS[i % LINE_COLORS.length]}"></span>
         ${escapeHtml(name)}
       </span>
-      <span class="line-row-counts">in ${v.in} &middot; out ${v.out}</span>
+      <span class="line-row-counts">${inLabel} ${v.in} &middot; ${outLabel} ${v.out}</span>
     </div>
   `).join("");
 }
@@ -323,7 +330,7 @@ async function pollStatus() {
     statFrames.textContent = data.total_frames ? `frame ${data.frame_idx}/${data.total_frames}` : "";
     progressFill.style.width = data.progress + "%";
 
-    renderLines(data.lines);
+    renderLines(data.lines, data.direction_mode);
     renderCategories(data.categories);
 
     if (data.speed_mode || data.reanalyzed) {

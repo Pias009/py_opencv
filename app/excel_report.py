@@ -52,9 +52,17 @@ def generate_report_xlsx(entry, output_path):
 
     # --- Per-line / direction sheet ---
     lines = entry.get("lines") or {}
+    direction_mode = entry.get("direction_mode", "IN_OUT")
+
+    in_hdr, out_hdr = "In", "Out"
+    if direction_mode == "COMING_GOING":
+        in_hdr, out_hdr = "Coming", "Going"
+    elif direction_mode == "FORWARD_BACKWARD":
+        in_hdr, out_hdr = "Forward", "Backward"
+
     if lines:
         ws2 = wb.create_sheet("By Road-Direction")
-        headers = ["Line / Road", "In", "Out", "Total"]
+        headers = ["Line / Road", in_hdr, out_hdr, "Total"]
         for c, h in enumerate(headers, start=1):
             cell = ws2.cell(row=1, column=c, value=h)
             cell.fill = HEADER_FILL

@@ -55,9 +55,17 @@ def generate_report_pdf(entry, output_path):
 
     # --- Per-line / per-direction breakdown ---
     lines = entry.get("lines") or {}
+    direction_mode = entry.get("direction_mode", "IN_OUT")
+
+    in_hdr, out_hdr = "In", "Out"
+    if direction_mode == "COMING_GOING":
+        in_hdr, out_hdr = "Coming", "Going"
+    elif direction_mode == "FORWARD_BACKWARD":
+        in_hdr, out_hdr = "Forward", "Backward"
+
     if lines:
         story.append(Paragraph("Counts by Road / Direction", h2))
-        rows = [["Line / Road", "In", "Out", "Total"]]
+        rows = [["Line / Road", in_hdr, out_hdr, "Total"]]
         for name, v in lines.items():
             in_c, out_c = v.get("in", 0), v.get("out", 0)
             rows.append([name, str(in_c), str(out_c), str(in_c + out_c)])
