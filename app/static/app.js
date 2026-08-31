@@ -476,7 +476,80 @@ if (invertLiveBtn) {
   });
 }
 
-startBtn.addEventListener("click", startJob);
+const confirmModal = document.getElementById("confirm-modal");
+const modalCloseBtn = document.getElementById("modal-close-btn");
+const modalEditBtn = document.getElementById("modal-edit-btn");
+const modalConfirmBtn = document.getElementById("modal-confirm-btn");
+
+function openConfirmModal() {
+  clearError();
+  const file = fileInput.files[0];
+
+  if (!file) {
+    showError("Please select or drop a video file first.");
+    return;
+  }
+
+  const speedSelect = document.getElementById("speed-select");
+  const lineModeSelect = document.getElementById("line-mode-select");
+  const toggleIn = document.getElementById("toggle-in");
+  const toggleOut = document.getElementById("toggle-out");
+  const directionRadio = document.querySelector('input[name="direction_mode"]:checked');
+  const activeLines = Array.from(document.querySelectorAll(".line-check:checked")).map(c => c.value);
+
+  const speedMap = { "1": "1x Normal Speed (100%)", "2": "2x Fast-Forward (200%)", "3": "3x Ultra Fast (300%)" };
+  const modeMap = { "box": "4-Way Intersection Box", "horizontal": "Single Horizontal Line", "vertical": "Vertical Boundary Line" };
+  const termMap = { "IN_OUT": "IN / OUT", "COMING_GOING": "COMING / GOING", "FORWARD_BACKWARD": "FORWARD / BACKWARD" };
+
+  const modeText = modeMap[lineModeSelect ? lineModeSelect.value : "box"] || "4-Way Intersection Box";
+  const speedText = speedMap[speedSelect ? speedSelect.value : "2"] || "2x Fast-Forward";
+  const namingText = termMap[directionRadio ? directionRadio.value : "IN_OUT"] || "IN / OUT";
+
+  let flowsText = [];
+  if (toggleIn && toggleIn.checked) flowsText.push("🟢 IN Flow");
+  if (toggleOut && toggleOut.checked) flowsText.push("🔴 OUT Flow");
+  const flowStr = flowsText.length ? flowsText.join(" | ") : "⚠️ No Flows Selected";
+
+  const linesStr = activeLines.length ? activeLines.join(", ") : "None (All Disabled)";
+
+  const videoVal = document.getElementById("modal-video-val");
+  const modeVal = document.getElementById("modal-mode-val");
+  const speedVal = document.getElementById("modal-speed-val");
+  const namingVal = document.getElementById("modal-naming-val");
+  const flowsVal = document.getElementById("modal-flows-val");
+  const linesVal = document.getElementById("modal-lines-val");
+  const humanSummary = document.getElementById("modal-human-summary");
+
+  if (videoVal) videoVal.textContent = file.name;
+  if (modeVal) modeVal.textContent = modeText;
+  if (speedVal) speedVal.textContent = speedText;
+  if (namingVal) namingVal.textContent = namingText;
+  if (flowsVal) flowsVal.textContent = flowStr;
+  if (linesVal) linesVal.textContent = linesStr;
+
+  let summary = `The AI engine will analyze '${file.name}' using ${modeText} at ${speedText}. `;
+  if (flowsText.length === 2) {
+    summary += `It will count both incoming & outgoing traffic across ${linesStr} lines.`;
+  } else if (flowsText.length === 1) {
+    summary += `It will count ONLY ${flowsText[0]} vehicles across ${linesStr} lines (1-side lane mode).`;
+  } else {
+    summary += `Warning: No traffic flows are currently enabled.`;
+  }
+  if (humanSummary) humanSummary.textContent = summary;
+
+  if (confirmModal) confirmModal.hidden = false;
+}
+
+if (modalCloseBtn) modalCloseBtn.addEventListener("click", () => confirmModal.hidden = true);
+if (modalEditBtn) modalEditBtn.addEventListener("click", () => confirmModal.hidden = true);
+if (modalConfirmBtn) {
+  modalConfirmBtn.addEventListener("click", () => {
+    confirmModal.hidden = true;
+    startJob();
+  });
+}
+
+startBtn.addEventListener("click", openConfirmModal);
 cancelBtn.addEventListener("click", cancelJob);
 refreshBtn.addEventListener("click", loadHistory);
 newVideoBtn.addEventListener("click", startNewVideo);
