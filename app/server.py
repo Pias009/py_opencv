@@ -256,6 +256,12 @@ def api_start():
 
     line_mode = request.form.get("line_mode", "box")
     invert_direction = request.form.get("invert", "false").lower() == "true"
+    enable_in = request.form.get("enable_in", "true").lower() == "true"
+    enable_out = request.form.get("enable_out", "true").lower() == "true"
+    direction_mode = request.form.get("direction_mode", "IN_OUT")
+
+    enabled_lines_raw = request.form.get("enabled_lines", "North,South,West,East,Line1")
+    enabled_lines = [x.strip() for x in enabled_lines_raw.split(",") if x.strip()]
 
     job_id = uuid.uuid4().hex
     job = {
@@ -272,6 +278,10 @@ def api_start():
         "vid_stride": vid_stride,
         "line_mode": line_mode,
         "invert_direction": invert_direction,
+        "enable_in": enable_in,
+        "enable_out": enable_out,
+        "enabled_lines": enabled_lines,
+        "direction_mode": direction_mode,
         "speed_mode": f"{vid_stride}x Fast-Forward",
         "reanalyzed": 0,
     }

@@ -111,7 +111,11 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
         for ln in lines:
             ln.nx, ln.ny = -ln.nx, -ln.ny
 
-    model = get_yolo_model(model_path)
+    enable_in = bool(job.get("enable_in", True))
+    enable_out = bool(job.get("enable_out", True))
+    raw_enabled_lines = job.get("enabled_lines")
+    enabled_lines = set(raw_enabled_lines) if raw_enabled_lines is not None else {ln.name for ln in lines}
+    direction_mode = job.get("direction_mode", "IN_OUT")
 
     # Track histories: track_id -> dict of properties
     # properties: {"history": [(x, y)], "counted_lines": set(), "category_votes": {}, "best_category": str}
@@ -127,6 +131,9 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
     job["categories"] = {}
     job["model_used"] = f"{model_key}_zero_fault"
     job["started_at"] = time.time()
+    job["direction_mode"] = direction_mode
+
+    model = get_yolo_model(model_path)
 
     # Stream frames from ultralytics generator with ByteTrack active and acceleration stride
     results_generator = model.track(
@@ -162,6 +169,8 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
         # Draw line boundaries
         if needs_vis:
             for i, ln in enumerate(lines):
+                if enabled_lines and ln.name not in enabled_lines:
+                    continue
                 color = LINE_COLORS[i % len(LINE_COLORS)]
                 cv2.line(frame, (ln.x1, ln.y1), (ln.x2, ln.y2), color, 3)
                 cv2.putText(frame, ln.name, (ln.x1 + 6, ln.y1 - 10),
@@ -216,6 +225,10 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                     disp = ((p_curr[0] - p_prev[0])**2 + (p_curr[1] - p_prev[1])**2)**0.5
                     if disp >= 1.5:
                         for ln in lines:
+                            # Skip line if toggled off by user
+                            if enabled_lines and ln.name not in enabled_lines:
+                                continue
+
                             if ln.name in tr["counted_lines"]:
                                 continue
 
@@ -229,8 +242,13 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                                 dy = p_curr[1] - p_prev[1]
                                 dot_product = dx * ln.nx + dy * ln.ny
 
-                                direction = "in" if dot_product > 0 else "out"
-                                if direction == "in":
+                                is_in = dot_product > 0
+                                if is_in and not enable_in:
+                                    continue
+                                if not is_in and not enable_out:
+                                    continue
+
+                                if is_in:
                                     ln.in_count += 1
                                 else:
                                     ln.out_count += 1

@@ -100,6 +100,17 @@ async function uploadFileInChunks(file, onProgress) {
   return completedFilePath;
 }
 
+// Master switch: Toggle all side lines ON / OFF
+const masterToggleBtn = document.getElementById("master-toggle-btn");
+if (masterToggleBtn) {
+  let allLinesOn = true;
+  masterToggleBtn.addEventListener("click", () => {
+    allLinesOn = !allLinesOn;
+    document.querySelectorAll(".line-check").forEach(chk => chk.checked = allLinesOn);
+    masterToggleBtn.textContent = allLinesOn ? "⚡ Toggle All Lines (OFF)" : "⚡ Toggle All Lines (ON)";
+  });
+}
+
 async function startJob() {
   clearError();
   const file = fileInput.files[0];
@@ -116,9 +127,19 @@ async function startJob() {
   const lineModeSelect = document.getElementById("line-mode-select");
   const invertCheck = document.getElementById("invert-check");
 
+  const toggleIn = document.getElementById("toggle-in");
+  const toggleOut = document.getElementById("toggle-out");
+
+  const directionRadio = document.querySelector('input[name="direction_mode"]:checked');
+
   const speed = speedSelect ? speedSelect.value : "2";
   const lineMode = lineModeSelect ? lineModeSelect.value : "box";
   const invert = invertCheck ? invertCheck.checked : false;
+  const enableIn = toggleIn ? toggleIn.checked : true;
+  const enableOut = toggleOut ? toggleOut.checked : true;
+  const directionMode = directionRadio ? directionRadio.value : "IN_OUT";
+
+  const enabledLines = Array.from(document.querySelectorAll(".line-check:checked")).map(c => c.value);
 
   try {
     const uploadedFilePath = await uploadFileInChunks(file, (pct) => {
@@ -135,6 +156,10 @@ async function startJob() {
     startFormData.append("speed", speed);
     startFormData.append("line_mode", lineMode);
     startFormData.append("invert", invert);
+    startFormData.append("enable_in", enableIn);
+    startFormData.append("enable_out", enableOut);
+    startFormData.append("direction_mode", directionMode);
+    startFormData.append("enabled_lines", enabledLines.join(","));
 
     const res = await fetch("/api/start", { method: "POST", body: startFormData });
     const data = await res.json();

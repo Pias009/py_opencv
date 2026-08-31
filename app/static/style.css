@@ -301,6 +301,61 @@ button.stop-btn:hover {
   background: #e63946;
 }
 
+.radio-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.radio-chip:has(input:checked) {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+.radio-chip input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+.custom-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.custom-toggle:hover {
+  border-color: var(--accent);
+}
+.custom-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  margin: 0;
+  cursor: pointer;
+}
+.custom-toggle.side-toggle {
+  padding: 6px 8px;
+  font-size: 0.76rem;
+  justify-content: center;
+}
+
 .new-video-btn {
   background: #3ddc84;
   color: #0f1115;
