@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vehicle Counter</title>
-<link rel="stylesheet" href="/static/style.css?v=7.0">
+<link rel="stylesheet" href="/static/style.css?v=11.0">
 </head>
 <body>
 <!--
@@ -95,7 +95,8 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
             <button type="button" class="info-trigger" data-ref="boundary" title="View Boundary Diagram">ℹ️</button>
           </div>
           <select id="line-mode-select" class="speed-select">
-            <option value="box" selected>🎯 4-Way Intersection Box (Auto Centered)</option>
+            <option value="auto" selected>🧠 Auto-Brain Smart Corridor (Auto Lane Snapping)</option>
+            <option value="box">🎯 4-Way Intersection Box (Auto Centered)</option>
             <option value="horizontal">➖ Single Horizontal Boundary Line</option>
             <option value="vertical">Vertical Boundary Line</option>
           </select>
@@ -224,10 +225,20 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
             </div>
           </div>
         </div>
-      </div>
-      </div>
 
-      <button id="start-btn" style="margin-top: 16px;">Start Counting</button>
+        <!-- 🚀 Launch Action Button (Inside Toggle Section) -->
+        <div class="launch-action-wrapper">
+          <button id="start-btn" type="button" class="hero-launch-btn">
+            <div class="btn-inner-content">
+              <span class="btn-icon">🚀</span>
+              <div class="btn-text-group">
+                <span class="btn-main-title">START VEHICLE COUNTING ANALYTICS</span>
+                <span class="btn-sub-title">Launch Zero-Fault AI Computer Vision Engine</span>
+              </div>
+            </div>
+          </button>
+        </div>
+      </div>
       <p class="error" id="error-msg" hidden></p>
     </section>
 
@@ -375,6 +386,6 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   </div>
 </div>
 
-<script src="/static/app.js?v=7.0"></script>
+<script src="/static/app.js?v=11.0"></script>
 </body>
 </html>

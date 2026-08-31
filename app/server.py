@@ -140,6 +140,9 @@ def job_worker(job_id, video_path, source_label):
             lines = default_lines(frame_w, frame_h)
         elif line_mode == "vertical":
             lines = vertical_line(frame_w, frame_h, pct=0.5)
+        elif line_mode == "auto":
+            from zero_fault_counter import auto_detect_road_corridor
+            lines = auto_detect_road_corridor(video_path, frame_w, frame_h)
         else:
             lines = box_lines(frame_w, frame_h, margin=40)
 

@@ -49,16 +49,55 @@ function clearError() {
   errorMsg.textContent = "";
 }
 
-const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB slices for fast, reliable Railway uploading
-
 async function uploadFileInChunks(file, onProgress) {
-  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+  // Ultra-fast single-pass XHR upload with real-time hardware progress for files <= 32MB
+  if (file.size <= 32 * 1024 * 1024) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      const formData = new FormData();
+      const uploadId = Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
+
+      formData.append("upload_id", uploadId);
+      formData.append("chunk_index", 0);
+      formData.append("total_chunks", 1);
+      formData.append("filename", file.name);
+      formData.append("chunk", file, file.name);
+
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          const pct = Math.round((e.loaded / e.total) * 100);
+          onProgress(pct);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            resolve(data.file_path);
+          } catch (err) {
+            reject(err);
+          }
+        } else {
+          reject(new Error("Upload failed"));
+        }
+      };
+
+      xhr.onerror = () => reject(new Error("Network error during upload"));
+      xhr.open("POST", "/api/upload_chunk", true);
+      xhr.send(formData);
+    });
+  }
+
+  // 16MB chunking for maximum multi-megabyte throughput on large video streams
+  const FAST_CHUNK_SIZE = 16 * 1024 * 1024;
+  const totalChunks = Math.ceil(file.size / FAST_CHUNK_SIZE);
   const uploadId = Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
   let completedFilePath = null;
 
   for (let i = 0; i < totalChunks; i++) {
-    const start = i * CHUNK_SIZE;
-    const end = Math.min(file.size, start + CHUNK_SIZE);
+    const start = i * FAST_CHUNK_SIZE;
+    const end = Math.min(file.size, start + FAST_CHUNK_SIZE);
     const chunkBlob = file.slice(start, end);
 
     const chunkFormData = new FormData();
@@ -68,26 +107,8 @@ async function uploadFileInChunks(file, onProgress) {
     chunkFormData.append("filename", file.name);
     chunkFormData.append("chunk", chunkBlob, file.name);
 
-    let attempts = 0;
-    let success = false;
-    let responseData = null;
-
-    while (attempts < 3 && !success) {
-      try {
-        attempts++;
-        const res = await fetch("/api/upload_chunk", { method: "POST", body: chunkFormData });
-        responseData = await res.json();
-        if (res.ok) {
-          success = true;
-        } else {
-          if (attempts >= 3) throw new Error(responseData.error || "Chunk upload failed");
-          await new Promise(r => setTimeout(r, 1000));
-        }
-      } catch (err) {
-        if (attempts >= 3) throw err;
-        await new Promise(r => setTimeout(r, 1000));
-      }
-    }
+    const res = await fetch("/api/upload_chunk", { method: "POST", body: chunkFormData });
+    const responseData = await res.json();
 
     const progressPct = Math.round(((i + 1) / totalChunks) * 100);
     onProgress(progressPct);
@@ -345,23 +366,65 @@ function renderLines(lines, directionMode) {
     sideLinesBlock.hidden = true;
     return;
   }
-  let inLabel = "in", outLabel = "out";
-  if (directionMode === "COMING_GOING") {
-    inLabel = "coming"; outLabel = "going";
-  } else if (directionMode === "FORWARD_BACKWARD") {
-    inLabel = "forward"; outLabel = "backward";
-  }
+
+  const toggleIn = document.getElementById("toggle-in");
+  const toggleOut = document.getElementById("toggle-out");
+  const isInActive = toggleIn ? toggleIn.checked : true;
+  const isOutActive = toggleOut ? toggleOut.checked : true;
+
+  const enabledIn = Array.from(document.querySelectorAll(".line-in-check:checked")).map(c => c.value.toLowerCase());
+  const enabledOut = Array.from(document.querySelectorAll(".line-out-check:checked")).map(c => c.value.toLowerCase());
+
+  let totalInCount = 0;
+  let totalOutCount = 0;
+
+  entries.forEach(([name, v]) => {
+    totalInCount += (v.in || 0);
+    totalOutCount += (v.out || 0);
+  });
 
   sideLinesBlock.hidden = false;
-  lineRows.innerHTML = entries.map(([name, v], i) => `
-    <div class="line-row">
-      <span class="line-row-name">
-        <span class="line-dot" style="background:${LINE_COLORS[i % LINE_COLORS.length]}"></span>
-        ${escapeHtml(name)}
-      </span>
-      <span class="line-row-counts">${inLabel} ${v.in} &middot; ${outLabel} ${v.out}</span>
+
+  let html = `
+    <div class="live-flow-summary-badge" style="display: flex; gap: 8px; margin-bottom: 10px;">
+      <div style="flex: 1; background: rgba(16, 185, 129, 0.12); border: 1px solid #10b981; border-radius: 8px; padding: 6px 10px; text-align: center;">
+        <span style="font-size: 0.7rem; color: #3ddc84; font-weight: 700; display: block;">🟢 IN FLOW</span>
+        <span style="font-size: 1rem; color: #fff; font-weight: 800;">${isInActive ? totalInCount : 'OFF'}</span>
+      </div>
+      <div style="flex: 1; background: rgba(239, 68, 68, 0.12); border: 1px solid #ef4444; border-radius: 8px; padding: 6px 10px; text-align: center;">
+        <span style="font-size: 0.7rem; color: #ff4d4d; font-weight: 700; display: block;">🔴 OUT FLOW</span>
+        <span style="font-size: 1rem; color: #fff; font-weight: 800;">${isOutActive ? totalOutCount : 'OFF'}</span>
+      </div>
     </div>
-  `).join("");
+  `;
+
+  html += entries.map(([name, v], i) => {
+    const sideKey = name.replace(" Line", "").toLowerCase();
+    const inActive = isInActive && (enabledIn.length === 0 || enabledIn.includes(sideKey));
+    const outActive = isOutActive && (enabledOut.length === 0 || enabledOut.includes(sideKey));
+
+    return `
+      <div class="line-row" style="flex-direction: column; align-items: stretch; gap: 4px; padding: 8px 10px; background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 8px; margin-bottom: 6px;">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <span class="line-row-name" style="font-weight: 700; font-size: 0.82rem; color: #fff;">
+            <span class="line-dot" style="background:${LINE_COLORS[i % LINE_COLORS.length]}"></span>
+            ${escapeHtml(name)}
+          </span>
+          <span style="font-size: 0.75rem; color: var(--text-dim); font-weight: 600;">Total: ${(v.in || 0) + (v.out || 0)}</span>
+        </div>
+        <div style="display: flex; gap: 6px; margin-top: 2px;">
+          <span style="flex: 1; font-size: 0.72rem; padding: 3px 6px; border-radius: 5px; background: ${inActive ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255,255,255,0.03)'}; color: ${inActive ? '#3ddc84' : 'var(--text-dim)'}; border: 1px solid ${inActive ? 'rgba(16, 185, 129, 0.3)' : 'transparent'}; font-weight: 600; text-align: center;">
+            ⬆️ IN: ${v.in || 0}
+          </span>
+          <span style="flex: 1; font-size: 0.72rem; padding: 3px 6px; border-radius: 5px; background: ${outActive ? 'rgba(239, 68, 68, 0.15)' : 'rgba(255,255,255,0.03)'}; color: ${outActive ? '#ff4d4d' : 'var(--text-dim)'}; border: 1px solid ${outActive ? 'rgba(239, 68, 68, 0.3)' : 'transparent'}; font-weight: 600; text-align: center;">
+            ⬇️ OUT: ${v.out || 0}
+          </span>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  lineRows.innerHTML = html;
 }
 
 function renderCategories(categories) {

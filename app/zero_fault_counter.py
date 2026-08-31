@@ -65,6 +65,62 @@ def get_centroid(box):
     return (x1 + x2) / 2.0, (y1 + y2) / 2.0
 
 
+def auto_detect_road_corridor(video_source, frame_w, frame_h, sample_frames=45):
+    """Auto-Brain Lane Snapping: Analyzes initial frame motion to infer active vehicle corridor bounds."""
+    try:
+        cap = cv2.VideoCapture(video_source)
+        if not cap.isOpened():
+            return box_lines(frame_w, frame_h, margin=40)
+
+        backSub = cv2.createBackgroundSubtractorMOG2(history=100, varThreshold=40, detectShadows=False)
+        pts_x = []
+        pts_y = []
+        count = 0
+
+        while count < sample_frames:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            count += 1
+            if count % 2 != 0:
+                continue
+
+            fgMask = backSub.apply(frame)
+            contours, _ = cv2.findContours(fgMask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for c in contours:
+                area = cv2.contourArea(c)
+                if area > 800:
+                    x, y, w, h = cv2.boundingRect(c)
+                    pts_x.append(x + w / 2)
+                    pts_y.append(y + h / 2)
+
+        cap.release()
+
+        if len(pts_x) > 15:
+            xmin = max(20, int(np.percentile(pts_x, 8)))
+            xmax = min(frame_w - 20, int(np.percentile(pts_x, 92)))
+            ymin = max(20, int(np.percentile(pts_y, 8)))
+            ymax = min(frame_h - 20, int(np.percentile(pts_y, 92)))
+
+            xmin = max(10, xmin - 25)
+            xmax = min(frame_w - 10, xmax + 25)
+            ymin = max(10, ymin - 25)
+            ymax = min(frame_h - 10, ymax + 25)
+
+            center = ((xmin + xmax) / 2, (ymin + ymax) / 2)
+            lines = [
+                CountingLine("North Line", xmin, ymin, xmax, ymin, inward_point=center),
+                CountingLine("South Line", xmin, ymax, xmax, ymax, inward_point=center),
+                CountingLine("West Line", xmin, ymin, xmin, ymax, inward_point=center),
+                CountingLine("East Line", xmax, ymin, xmax, ymax, inward_point=center),
+            ]
+            return lines
+    except Exception as e:
+        print(f"Auto-Brain corridor detection fallback: {e}")
+
+    return box_lines(frame_w, frame_h, margin=40)
+
+
 def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                             conf_threshold=0.25, imgsz=512, vid_stride=2, frame_sink=None,
                             show_window=False, display_max_width=1280):
@@ -230,9 +286,8 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                     p_prev = history[-2]
                     p_curr = history[-1]
 
-                    # Minimum trajectory displacement check to avoid stationary jitter
                     disp = ((p_curr[0] - p_prev[0])**2 + (p_curr[1] - p_prev[1])**2)**0.5
-                    if disp >= 1.5:
+                    if disp >= 1.2:
                         for ln in lines:
                             # Skip line if toggled off by user
                             if enabled_lines and ln.name not in enabled_lines:
@@ -244,21 +299,39 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                             line_seg_A = (ln.x1, ln.y1)
                             line_seg_B = (ln.x2, ln.y2)
 
-                            # Exact mathematical segment-intersection test
-                            if segments_intersect(p_prev, p_curr, line_seg_A, line_seg_B):
+                            crossed = segments_intersect(p_prev, p_curr, line_seg_A, line_seg_B)
+                            chk_prev = p_prev
+                            chk_curr = p_curr
+
+                            # --- Zero-Fault Self-Healing Re-Scan ---
+                            # If direct segment did not cross, but centroid is within 45px of line segment,
+                            # re-scan sub-trajectories across last 5 trajectory steps to recover missed strided crossings
+                            if not crossed and len(history) >= 3:
+                                dist = ln.distance_to_segment(p_curr[0], p_curr[1])
+                                if dist <= 45:
+                                    sub_pts = history[-5:]
+                                    for k in range(1, len(sub_pts)):
+                                        if segments_intersect(sub_pts[k-1], sub_pts[k], line_seg_A, line_seg_B):
+                                            crossed = True
+                                            chk_prev = sub_pts[k-1]
+                                            chk_curr = sub_pts[k]
+                                            job["reanalyzed"] = job.get("reanalyzed", 0) + 1
+                                            break
+
+                            if crossed:
                                 # Determine direction using normal vector dot product
-                                dx = p_curr[0] - p_prev[0]
-                                dy = p_curr[1] - p_prev[1]
+                                dx = chk_curr[0] - chk_prev[0]
+                                dy = chk_curr[1] - chk_prev[1]
                                 dot_product = dx * ln.nx + dy * ln.ny
 
                                 is_in = dot_product > 0
                                 if count_scope_mode == "active_only":
                                     if is_in:
-                                        if not enable_in or (enabled_lines_in and ln.name not in enabled_lines_in):
+                                        if not enable_in or (enabled_lines_in and ln.name.replace(" Line", "") not in enabled_lines_in and ln.name not in enabled_lines_in):
                                             continue
                                         ln.in_count += 1
                                     else:
-                                        if not enable_out or (enabled_lines_out and ln.name not in enabled_lines_out):
+                                        if not enable_out or (enabled_lines_out and ln.name.replace(" Line", "") not in enabled_lines_out and ln.name not in enabled_lines_out):
                                             continue
                                         ln.out_count += 1
                                 else:
