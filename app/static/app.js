@@ -120,11 +120,15 @@ function updateSidebarRules() {
   if (sideIn && toggleIn) {
     sideIn.textContent = toggleIn.checked ? "ENABLED" : "OFF";
     sideIn.style.color = toggleIn.checked ? "#3ddc84" : "var(--text-dim)";
+    const badgeIn = document.querySelector(".flow-in .card-badge");
+    if (badgeIn) badgeIn.textContent = toggleIn.checked ? "ACTIVE" : "OFF";
   }
 
   if (sideOut && toggleOut) {
     sideOut.textContent = toggleOut.checked ? "ENABLED" : "OFF";
     sideOut.style.color = toggleOut.checked ? "#ff4d4d" : "var(--text-dim)";
+    const badgeOut = document.querySelector(".flow-out .card-badge");
+    if (badgeOut) badgeOut.textContent = toggleOut.checked ? "ACTIVE" : "OFF";
   }
 
   if (sideLines) {
