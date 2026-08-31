@@ -350,6 +350,14 @@ button.stop-btn:hover {
   margin: 0;
   cursor: pointer;
 }
+.btn-logo {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex-shrink: 0;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.4);
+}
 .custom-toggle.side-toggle {
   padding: 6px 8px;
   font-size: 0.76rem;

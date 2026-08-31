@@ -108,7 +108,10 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
       </div>
       <div class="toggle-section" style="margin-top: 16px; padding: 14px; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 10px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-          <h3 style="margin: 0; font-size: 0.92rem; color: var(--accent); font-weight: 600;">🎛️ Custom Counting &amp; Direction Toggles</h3>
+          <h3 style="margin: 0; font-size: 0.92rem; color: var(--accent); font-weight: 600; display: flex; align-items: center; gap: 8px;">
+            <img src="/static/img/intersection_box.png" alt="Intersection" style="width: 22px; height: 22px; border-radius: 4px; object-fit: cover;">
+            <span>🎛️ Custom Counting &amp; Direction Toggles</span>
+          </h3>
           <button id="master-toggle-btn" type="button" class="secondary" style="font-size: 0.75rem; padding: 4px 10px;">⚡ Toggle All Lines (ON / OFF)</button>
         </div>
 
@@ -124,27 +127,32 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-top: 8px;">
           <label class="custom-toggle" data-tip="Counts all incoming vehicles entering the road intersection">
             <input type="checkbox" id="toggle-in" checked>
-            <span class="toggle-label">🟢 Count IN / Coming Traffic</span>
+            <img src="/static/img/in_flow.png" alt="IN Flow" class="btn-logo">
+            <span class="toggle-label">Count IN / Coming</span>
           </label>
 
           <label class="custom-toggle" data-tip="Counts all outgoing vehicles leaving the road intersection">
             <input type="checkbox" id="toggle-out" checked>
-            <span class="toggle-label">🔴 Count OUT / Going Traffic</span>
+            <img src="/static/img/out_flow.png" alt="OUT Flow" class="btn-logo">
+            <span class="toggle-label">Count OUT / Going</span>
           </label>
 
           <label class="custom-toggle" data-tip="Calculates and displays total overall vehicle count metric">
             <input type="checkbox" id="toggle-total" checked>
-            <span class="toggle-label">📊 Enable Total Count Metric</span>
+            <span class="toggle-label">📊 Enable Total Count</span>
           </label>
 
           <label class="custom-toggle" data-tip="Flips vector normal to swap incoming and outgoing directions">
             <input type="checkbox" id="invert-check">
-            <span class="toggle-label">🔄 Swap IN &amp; OUT Directions</span>
+            <span class="toggle-label">🔄 Swap IN &amp; OUT</span>
           </label>
         </div>
 
         <div style="margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 10px;">
-          <span style="font-size: 0.78rem; color: var(--text-dim); display: block; margin-bottom: 8px; font-weight: 500;">Side Line Boundaries (Default: ALL ON)</span>
+          <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px;">
+            <img src="/static/img/compass.png" alt="Compass" style="width: 16px; height: 16px; border-radius: 3px; object-fit: cover;">
+            <span style="font-size: 0.78rem; color: var(--text-dim); font-weight: 500;">Side Line Boundaries (Default: ALL ON)</span>
+          </div>
           <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;" id="side-lines-container">
             <label class="custom-toggle side-toggle" data-tip="Tracks vehicles crossing the top North boundary line"><input type="checkbox" class="line-check" value="North" checked> <span>⬆️ North Line</span></label>
             <label class="custom-toggle side-toggle" data-tip="Tracks vehicles crossing the bottom South boundary line"><input type="checkbox" class="line-check" value="South" checked> <span>⬇️ South Line</span></label>
