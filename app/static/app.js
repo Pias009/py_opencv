@@ -148,6 +148,23 @@ if (masterToggleBtn) {
   });
 }
 
+// 1-Side Lane Preset Handler
+const preset1SideBtn = document.getElementById("preset-1side-btn");
+if (preset1SideBtn) {
+  preset1SideBtn.addEventListener("click", () => {
+    const lineModeSelect = document.getElementById("line-mode-select");
+    const toggleIn = document.getElementById("toggle-in");
+    const toggleOut = document.getElementById("toggle-out");
+
+    if (lineModeSelect) lineModeSelect.value = "vertical";
+    if (toggleIn) toggleIn.checked = true;
+    if (toggleOut) toggleOut.checked = false;
+
+    updateSidebarRules();
+    alert("🚗 Configured for 1-Side Near Lane Counting!\n- Line: Vertical Boundary Line\n- Flow: IN Only (OUT Disabled)\n\nTip: Use '🔄 Reverse Direction' if you need to flip counting to the other lane.");
+  });
+}
+
 // Hover Shift Effect on Left Sidebar
 const sideConfigBlock = document.getElementById("side-config-block");
 const sideHoverTip = document.getElementById("sidebar-hover-tip");

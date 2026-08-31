@@ -107,13 +107,16 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
         </div>
       </div>
       <div class="toggle-section" style="margin-top: 16px; padding: 16px; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 12px;">
-        <!-- Header -->
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <!-- Header & Quick Presets -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;">
           <h3 style="margin: 0; font-size: 0.95rem; color: #fff; font-weight: 600; display: flex; align-items: center; gap: 8px;">
             <img src="/static/img/intersection_box.png" alt="Intersection" style="width: 24px; height: 24px; border-radius: 6px; object-fit: cover;">
             <span>Counting &amp; Flow Options</span>
           </h3>
-          <button id="master-toggle-btn" type="button" class="secondary" style="font-size: 0.75rem; padding: 5px 12px; border-radius: 20px;">⚡ Toggle All Lines</button>
+          <div style="display: flex; gap: 6px;">
+            <button id="preset-1side-btn" type="button" class="secondary" style="font-size: 0.73rem; padding: 4px 10px; border-radius: 16px; border-color: #3ddc84; color: #3ddc84; background: rgba(61,220,132,0.1);" data-tip="1-Click setup to count ONLY the 1-side lane near the camera">🚗 1-Side Lane Only</button>
+            <button id="master-toggle-btn" type="button" class="secondary" style="font-size: 0.75rem; padding: 5px 12px; border-radius: 20px;">⚡ Toggle All Lines</button>
+          </div>
         </div>
 
         <!-- 2 Big Visual Flow Cards (IN / OUT) -->
