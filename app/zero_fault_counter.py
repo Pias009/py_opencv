@@ -65,6 +65,24 @@ def get_centroid(box):
     return (x1 + x2) / 2.0, (y1 + y2) / 2.0
 
 
+def box_intersects_segment(box, A, B):
+    """Check if vehicle bounding box (x1, y1, x2, y2) touches or intersects line segment AB."""
+    bx1, by1, bx2, by2 = box
+    top = ((bx1, by1), (bx2, by1))
+    bottom = ((bx1, by2), (bx2, by2))
+    left = ((bx1, by1), (bx1, by2))
+    right = ((bx2, by1), (bx2, by2))
+
+    for edge_A, edge_B in (top, bottom, left, right):
+        if segments_intersect(edge_A, edge_B, A, B):
+            return True
+
+    if (bx1 <= A[0] <= bx2 and by1 <= A[1] <= by2) or (bx1 <= B[0] <= bx2 and by1 <= B[1] <= by2):
+        return True
+
+    return False
+
+
 def auto_detect_road_corridor(video_source, frame_w, frame_h, sample_frames=45):
     """Auto-Brain Lane Snapping: Analyzes initial frame motion to infer active vehicle corridor bounds."""
     try:
@@ -254,10 +272,16 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                 track_id = int(track_id)
                 raw_name = model.names[int(cls_id)]
                 mapped_category = class_map.get(raw_name)
-
-                # Skip non-vehicle detections (e.g. Pedestrians if in BNVD)
                 if mapped_category is None:
-                    continue
+                    for k, v in class_map.items():
+                        if k.lower() == str(raw_name).lower():
+                            mapped_category = v
+                            break
+                if mapped_category is None:
+                    # Ignore persons or pedestrians
+                    if str(raw_name).lower() in ["person", "pedestrian", "human"]:
+                        continue
+                    mapped_category = str(raw_name).capitalize()
 
                 cx, cy = get_centroid(box)
 
@@ -283,6 +307,31 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                 tr = track_data[track_id]
                 history = tr["history"]
 
+                # --- Trajectory Motion Counting (Every Going/Coming vehicle tracked in scene) ---
+                if len(history) >= 2 and "motion_counted" not in tr:
+                    dy_tot = history[-1][1] - history[0][1]
+                    tot_disp = ((history[-1][0] - history[0][0])**2 + dy_tot**2)**0.5
+                    if tot_disp >= 5.0:
+                        is_going_veh = (dy_tot <= 0.2)
+                        if enable_out and not enable_in:
+                            is_going_veh = True
+                        elif enable_in and not enable_out:
+                            is_going_veh = False
+
+                        target_line = lines[0]
+                        if is_going_veh and enable_out:
+                            target_line.out_count += 1
+                            tr["motion_counted"] = True
+                            tr["counted_lines"].add(target_line.name)
+                            cat = tr["best_category"]
+                            categories_summary[cat] = categories_summary.get(cat, 0) + 1
+                        elif not is_going_veh and enable_in:
+                            target_line.in_count += 1
+                            tr["motion_counted"] = True
+                            tr["counted_lines"].add(target_line.name)
+                            cat = tr["best_category"]
+                            categories_summary[cat] = categories_summary.get(cat, 0) + 1
+
                 # Perform Zero-Fault Line Crossing Check if we have at least 2 points
                 if len(history) >= 2:
                     p_prev = history[-2]
@@ -303,16 +352,16 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                             line_seg_A = (ln.x1, ln.y1)
                             line_seg_B = (ln.x2, ln.y2)
 
-                            crossed = segments_intersect(p_prev, p_curr, line_seg_A, line_seg_B)
+                            crossed = segments_intersect(p_prev, p_curr, line_seg_A, line_seg_B) or box_intersects_segment(box, line_seg_A, line_seg_B)
                             chk_prev = p_prev
                             chk_curr = p_curr
 
                             # --- Zero-Fault Self-Healing Re-Scan ---
-                            # If direct segment did not cross, but centroid is within 45px of line segment,
+                            # If direct segment did not cross, but centroid is within 60px of line segment,
                             # re-scan sub-trajectories across last 5 trajectory steps to recover missed strided crossings
-                            if not crossed and len(history) >= 3:
+                            if not crossed and len(history) >= 2:
                                 dist = ln.distance_to_segment(p_curr[0], p_curr[1])
-                                if dist <= 45:
+                                if dist <= 60:
                                     sub_pts = history[-5:]
                                     for k in range(1, len(sub_pts)):
                                         if segments_intersect(sub_pts[k-1], sub_pts[k], line_seg_A, line_seg_B):
@@ -321,6 +370,14 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                                             chk_curr = sub_pts[k]
                                             job["reanalyzed"] = job.get("reanalyzed", 0) + 1
                                             break
+                                    if not crossed:
+                                        dy_tot = history[-1][1] - history[0][1]
+                                        # If going vehicle is moving UP and within 40px of top/North line, trigger crossing
+                                        if (dy_tot < 0 or (chk_curr[1] - chk_prev[1]) < 0) and dist <= 40:
+                                            crossed = True
+                                            chk_prev = p_prev
+                                            chk_curr = p_curr
+                                            job["reanalyzed"] = job.get("reanalyzed", 0) + 1
 
                             if crossed:
                                 # Determine vehicle motion direction directly from its displacement trajectory
@@ -328,8 +385,15 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                                 sample_len = min(5, len(history))
                                 dy_recent = history[-1][1] - history[-sample_len][1] if len(history) >= sample_len else (chk_curr[1] - chk_prev[1])
 
-                                # dy < 0 means moving UP (away from camera, backside showing) -> GOING
-                                is_going_vehicle = (dy_recent < -0.2 or dy_total < -1.0)
+                                # dy <= 0 means moving UP (away from camera, backside showing) -> GOING
+                                is_going_vehicle = (dy_recent <= 0.1 or dy_total <= 0.1)
+
+                                # Mode override: If user selected GOING ONLY mode, guarantee all crossings count as GOING
+                                if enable_out and not enable_in:
+                                    is_going_vehicle = True
+                                elif enable_in and not enable_out:
+                                    is_going_vehicle = False
+
                                 clean_name = ln.name.replace(" Line", "").strip()
 
                                 if count_scope_mode == "active_only":
