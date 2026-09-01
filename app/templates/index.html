@@ -102,15 +102,19 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
           </select>
         </div>
         <div class="field">
-          <div style="display: flex; align-items: center; justify-content: space-between;">
-            <label for="direction-mode-select">Traffic Naming &amp; Direction Mode</label>
-            <button type="button" class="info-trigger" data-ref="direction" title="Select Direction Naming Rules">ℹ️</button>
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+            <label>Traffic Direction Selector</label>
+            <button type="button" class="info-trigger" data-ref="coming_going" title="Select Direction Naming Rules">ℹ️</button>
           </div>
-          <select id="direction-mode-select" class="speed-select">
-            <option value="COMING_GOING" selected>🚘 Coming Forward (Face) vs Going Backward (Tail)</option>
-            <option value="IN_OUT">🟢 IN (Entering) vs 🔴 OUT (Exiting)</option>
-            <option value="FORWARD_BACKWARD">⬆️ Forward Direction vs ⬇️ Backward Direction</option>
-          </select>
+          <div class="direction-btn-group" style="display: flex; gap: 8px;">
+            <button type="button" id="dir-btn-going" class="dir-mode-btn active-going" style="flex: 1; padding: 10px 6px; border-radius: 8px; border: 1px solid #ff4d4d; background: rgba(255, 77, 77, 0.2); color: #fff; font-weight: 700; font-size: 0.8rem; cursor: pointer; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center; gap: 4px;">
+              <span>🔴 Forward Going (Backside)</span>
+            </button>
+            <button type="button" id="dir-btn-coming" class="dir-mode-btn" style="flex: 1; padding: 10px 6px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255, 255, 255, 0.04); color: var(--text-dim); font-weight: 700; font-size: 0.8rem; cursor: pointer; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center; gap: 4px;">
+              <span>🟢 Face Showing (Coming)</span>
+            </button>
+          </div>
+          <input type="hidden" id="direction-mode-select" value="COMING_GOING">
         </div>
         <div class="field">
           <div style="display: flex; align-items: center; justify-content: space-between;">
@@ -132,7 +136,8 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
             <span>Traffic Direction &amp; Lane Counting Rules</span>
           </h3>
           <div class="preset-group">
-            <button id="preset-1side-btn" type="button" class="preset-chip preset-highlight" data-tip="1-Click setup: Count ONLY 1-side incoming lane near camera">🚗 1-Side Lane Setup</button>
+            <button id="preset-going-only-btn" type="button" class="preset-chip preset-highlight" data-tip="1-Click setup: Count ONLY Going vehicles showing backside/tail">🔴 Going (Backside) Only</button>
+            <button id="preset-1side-btn" type="button" class="preset-chip" data-tip="1-Click setup: Count ONLY 1-side incoming lane near camera">🚗 1-Side Lane Setup</button>
             <button id="master-toggle-btn" type="button" class="preset-chip" data-tip="Enable or disable all boundary lines">⚡ Toggle All Sides</button>
           </div>
         </div>

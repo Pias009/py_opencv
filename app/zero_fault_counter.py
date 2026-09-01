@@ -170,7 +170,7 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
     enable_in = bool(job.get("enable_in", True))
     enable_out = bool(job.get("enable_out", True))
     raw_enabled_lines = job.get("enabled_lines")
-    enabled_lines = set(raw_enabled_lines) if raw_enabled_lines is not None else {ln.name for ln in lines}
+    enabled_lines = set(raw_enabled_lines) if raw_enabled_lines is not None else None
     direction_mode = job.get("direction_mode", "IN_OUT")
 
     # Track histories: track_id -> dict of properties
@@ -220,7 +220,7 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
         raw_out = job.get("enabled_lines_out")
         enabled_lines_out = set(raw_out) if raw_out is not None else None
         raw_enabled_lines = job.get("enabled_lines")
-        enabled_lines = set(raw_enabled_lines) if raw_enabled_lines is not None else {ln.name for ln in lines}
+        enabled_lines = set(raw_enabled_lines) if raw_enabled_lines is not None else None
 
         # Check for dynamic live direction toggle from UI
         if bool(job.get("invert_direction")) != inverted_state:
@@ -234,8 +234,10 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
         # Draw line boundaries
         if needs_vis:
             for i, ln in enumerate(lines):
-                if enabled_lines and ln.name not in enabled_lines:
-                    continue
+                clean_name = ln.name.replace(" Line", "").strip()
+                if enabled_lines is not None and len(enabled_lines) > 0:
+                    if clean_name not in enabled_lines and ln.name not in enabled_lines and len(lines) > 1:
+                        continue
                 color = LINE_COLORS[i % len(LINE_COLORS)]
                 cv2.line(frame, (ln.x1, ln.y1), (ln.x2, ln.y2), color, 3)
                 cv2.putText(frame, ln.name, (ln.x1 + 6, ln.y1 - 10),
@@ -289,9 +291,11 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                     disp = ((p_curr[0] - p_prev[0])**2 + (p_curr[1] - p_prev[1])**2)**0.5
                     if disp >= 1.2:
                         for ln in lines:
+                            clean_name = ln.name.replace(" Line", "").strip()
                             # Skip line if toggled off by user
-                            if enabled_lines and ln.name not in enabled_lines:
-                                continue
+                            if enabled_lines is not None and len(enabled_lines) > 0:
+                                if clean_name not in enabled_lines and ln.name not in enabled_lines and len(lines) > 1:
+                                    continue
 
                             if ln.name in tr["counted_lines"]:
                                 continue
@@ -319,30 +323,38 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                                             break
 
                             if crossed:
-                                # Determine direction using normal vector dot product
-                                dx = chk_curr[0] - chk_prev[0]
-                                dy = chk_curr[1] - chk_prev[1]
-                                dot_product = dx * ln.nx + dy * ln.ny
+                                # Determine vehicle motion direction directly from its displacement trajectory
+                                dy_total = history[-1][1] - history[0][1] if len(history) >= 2 else (chk_curr[1] - chk_prev[1])
+                                sample_len = min(5, len(history))
+                                dy_recent = history[-1][1] - history[-sample_len][1] if len(history) >= sample_len else (chk_curr[1] - chk_prev[1])
 
-                                is_in = dot_product > 0
+                                # dy < 0 means moving UP (away from camera, backside showing) -> GOING
+                                is_going_vehicle = (dy_recent < -0.2 or dy_total < -1.0)
+                                clean_name = ln.name.replace(" Line", "").strip()
+
                                 if count_scope_mode == "active_only":
-                                    if is_in:
-                                        if not enable_in or (enabled_lines_in and ln.name.replace(" Line", "") not in enabled_lines_in and ln.name not in enabled_lines_in):
+                                    if is_going_vehicle:
+                                        if not enable_out:
                                             continue
-                                        ln.in_count += 1
-                                    else:
-                                        if not enable_out or (enabled_lines_out and ln.name.replace(" Line", "") not in enabled_lines_out and ln.name not in enabled_lines_out):
-                                            continue
+                                        if enabled_lines_out is not None and len(enabled_lines_out) > 0:
+                                            if clean_name not in enabled_lines_out and ln.name not in enabled_lines_out and len(lines) > 1:
+                                                continue
                                         ln.out_count += 1
+                                    else:
+                                        if not enable_in:
+                                            continue
+                                        if enabled_lines_in is not None and len(enabled_lines_in) > 0:
+                                            if clean_name not in enabled_lines_in and ln.name not in enabled_lines_in and len(lines) > 1:
+                                                continue
+                                        ln.in_count += 1
                                 else:
                                     # "all_road" mode: count all traffic regardless of active filters
-                                    if is_in:
-                                        ln.in_count += 1
-                                    else:
+                                    if is_going_vehicle:
                                         ln.out_count += 1
+                                    else:
+                                        ln.in_count += 1
 
                                 tr["counted_lines"].add(ln.name)
-                                total_count += 1
 
                                 cat = tr["best_category"]
                                 categories_summary[cat] = categories_summary.get(cat, 0) + 1
@@ -353,47 +365,84 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
 
                 if needs_vis:
                     # Front/Facing vs Tail/Receding Motion Classifier
-                    # dy > 0 -> Vehicle moving down towards camera (Facing Front)
-                    # dy < 0 -> Vehicle moving up away from camera (Tail/Back)
+                    # dy > 0 -> Vehicle moving down towards camera (Facing Front / COMING)
+                    # dy < 0 -> Vehicle moving up away from camera (Tail/Back / GOING)
                     motion_dir = "COMING"
-                    box_color = (0, 255, 128)  # Vibrant Emerald Green for Coming Front Face
                     dir_arrow = "v"
 
                     if len(history) >= 2:
-                        dy = history[-1][1] - history[0][1]
-                        if dy < -2:
+                        dy_total = history[-1][1] - history[0][1]
+                        sample_len = min(5, len(history))
+                        dy_recent = history[-1][1] - history[-sample_len][1]
+
+                        # If vehicle is moving UP (y decreasing), it is GOING (receding, showing backside)
+                        if dy_recent < 0 or dy_total < 0:
                             motion_dir = "GOING"
-                            box_color = (0, 96, 255)  # Bright Coral Red/Orange for Going Back
                             dir_arrow = "^"
+                        else:
+                            motion_dir = "COMING"
+                            dir_arrow = "v"
+
+                    # Determine if vehicle is COUNTED or MATCHES active count rules (GREEN = Counting, RED = Not Counting)
+                    is_already_counted = len(tr["counted_lines"]) > 0
+                    if count_scope_mode == "all_road":
+                        is_counting_active = True
+                    else:
+                        if motion_dir == "GOING":
+                            is_counting_active = enable_out
+                        else:
+                            is_counting_active = enable_in
+
+                    if is_already_counted or is_counting_active:
+                        box_color = (0, 255, 0)   # BRIGHT GREEN for Counting / Active vehicle
+                        status_label = "COUNTING" if not is_already_counted else "COUNTED"
+                    else:
+                        box_color = (0, 0, 255)   # BRIGHT RED for Not Counting / Filtered Out vehicle
+                        status_label = "NOT COUNTING"
 
                     cur_dir_mode = job.get("direction_mode", "COMING_GOING")
                     if cur_dir_mode == "COMING_GOING":
-                        tag = f"[{motion_dir}]"
+                        tag = f"[{motion_dir} | {status_label}]"
                     elif cur_dir_mode == "FORWARD_BACKWARD":
-                        tag = "[FORWARD]" if motion_dir == "COMING" else "[BACKWARD]"
+                        tag = f"[{'FORWARD' if motion_dir == 'COMING' else 'BACKWARD'} | {status_label}]"
                     else:
-                        tag = "[IN]" if motion_dir == "COMING" else "[OUT]"
+                        tag = f"[{'IN' if motion_dir == 'COMING' else 'OUT'} | {status_label}]"
 
                     x1, y1, x2, y2 = (int(v) for v in box)
                     cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
 
                     label = f"#{track_id} {tr['best_category']} {tag} ({conf:.2f})"
                     cv2.putText(frame, label, (x1, max(15, y1 - 8)),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, box_color, 2)
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.48, box_color, 2)
 
                     # Draw direction arrow indicator
                     center_pt = (int((x1 + x2) / 2), int((y1 + y2) / 2))
                     cv2.putText(frame, dir_arrow, center_pt, cv2.FONT_HERSHEY_SIMPLEX, 0.7, box_color, 2)
 
                     # Draw movement trail
+                    trail_color = (0, 255, 0) if (is_already_counted or is_counting_active) else (0, 0, 255)
                     for j in range(1, len(history)):
                         pt1 = (int(history[j-1][0]), int(history[j-1][1]))
                         pt2 = (int(history[j][0]), int(history[j][1]))
-                        cv2.line(frame, pt1, pt2, (0, 200, 255), 2)
+                        cv2.line(frame, pt1, pt2, trail_color, 2)
+
+        # Compute total_count dynamically based ONLY on active enabled rules
+        total_count = 0
+        for ln in lines:
+            clean_name = ln.name.replace(" Line", "").strip()
+            if count_scope_mode == "all_road":
+                total_count += (ln.in_count + ln.out_count)
+            else:
+                if enable_in:
+                    if enabled_lines_in is None or len(enabled_lines_in) == 0 or clean_name in enabled_lines_in or ln.name in enabled_lines_in or len(lines) == 1:
+                        total_count += ln.in_count
+                if enable_out:
+                    if enabled_lines_out is None or len(enabled_lines_out) == 0 or clean_name in enabled_lines_out or ln.name in enabled_lines_out or len(lines) == 1:
+                        total_count += ln.out_count
 
         if needs_vis:
             # Draw status overlay
-            overlay_lines = [("TOTAL VEHICLES (0-Fault): " + str(total_count), (0, 0, 255), 1.0, 3)]
+            overlay_lines = [("TOTAL ACTIVE VEHICLES (0-Fault): " + str(total_count), (0, 255, 0), 1.0, 3)]
             for i, ln in enumerate(lines):
                 color = LINE_COLORS[i % len(LINE_COLORS)]
                 overlay_lines.append((f"{ln.name}  in:{ln.in_count} out:{ln.out_count}", color, 0.65, 2))

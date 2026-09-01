@@ -173,21 +173,49 @@ function updateSidebarRules() {
   const totalActiveRules = (toggleIn && toggleIn.checked ? inChecked : 0) + (toggleOut && toggleOut.checked ? outChecked : 0);
 
   if (sideIn && toggleIn) {
-    sideIn.textContent = toggleIn.checked ? `ENABLED (${inChecked} Sides)` : "OFF";
-    sideIn.style.color = toggleIn.checked ? "#3ddc84" : "var(--text-dim)";
-    if (badgeIn) badgeIn.textContent = toggleIn.checked ? "ACTIVE" : "OFF";
+    const sideInItem = sideIn.closest(".rule-item");
+    if (toggleIn.checked) {
+      if (sideInItem) sideInItem.style.display = "flex";
+      sideIn.textContent = `ENABLED (${inChecked} Sides)`;
+      sideIn.style.color = "#3ddc84";
+      if (badgeIn) badgeIn.textContent = "ACTIVE";
+    } else {
+      if (sideInItem) sideInItem.style.display = "none";
+      if (badgeIn) badgeIn.textContent = "OFF";
+    }
   }
 
   if (sideOut && toggleOut) {
-    sideOut.textContent = toggleOut.checked ? `ENABLED (${outChecked} Sides)` : "OFF";
-    sideOut.style.color = toggleOut.checked ? "#ff4d4d" : "var(--text-dim)";
-    if (badgeOut) badgeOut.textContent = toggleOut.checked ? "ACTIVE" : "OFF";
+    const sideOutItem = sideOut.closest(".rule-item");
+    if (toggleOut.checked) {
+      if (sideOutItem) sideOutItem.style.display = "flex";
+      sideOut.textContent = `ENABLED (${outChecked} Sides)`;
+      sideOut.style.color = "#ff4d4d";
+      if (badgeOut) badgeOut.textContent = "ACTIVE";
+    } else {
+      if (sideOutItem) sideOutItem.style.display = "none";
+      if (badgeOut) badgeOut.textContent = "OFF";
+    }
   }
 
-  if (sideLines) {
-    sideLines.textContent = `${totalActiveRules} Active Rule${totalActiveRules !== 1 ? 's' : ''}`;
+  const sideStatus = document.getElementById("side-status");
+  if (sideStatus) {
+    if (toggleOut && toggleOut.checked && (!toggleIn || !toggleIn.checked)) {
+      sideStatus.textContent = "🔴 Counting GOING Vehicles Only (Backside / Tail)";
+      sideStatus.style.color = "#ff4d4d";
+    } else if (toggleIn && toggleIn.checked && (!toggleOut || !toggleOut.checked)) {
+      sideStatus.textContent = "🟢 Counting COMING Vehicles Only (Face Showing)";
+      sideStatus.style.color = "#3ddc84";
+    } else if (toggleIn && toggleIn.checked && toggleOut && toggleOut.checked) {
+      sideStatus.textContent = "🌐 Counting ALL Road Traffic (Going & Coming)";
+      sideStatus.style.color = "var(--accent)";
+    } else {
+      sideStatus.textContent = "⚠️ All Counting Rules Disabled";
+      sideStatus.style.color = "var(--text-dim)";
+    }
   }
 
+  if (typeof syncDirectionButtons === "function") syncDirectionButtons();
   pushLiveRuleUpdate();
 }
 
@@ -235,6 +263,93 @@ if (masterToggleBtn) {
     document.querySelectorAll(".line-in-check, .line-out-check").forEach(chk => chk.checked = allLinesOn);
     masterToggleBtn.textContent = allLinesOn ? "⚡ Toggle All Sides (OFF)" : "⚡ Toggle All Sides (ON)";
     updateSidebarRules();
+  });
+}
+
+// Direct Direction Mode Toggle Buttons (Forward Going vs Face Showing Coming)
+const dirBtnGoing = document.getElementById("dir-btn-going");
+const dirBtnComing = document.getElementById("dir-btn-coming");
+
+function syncDirectionButtons() {
+  const toggleIn = document.getElementById("toggle-in");
+  const toggleOut = document.getElementById("toggle-out");
+  const inActive = toggleIn ? toggleIn.checked : false;
+  const outActive = toggleOut ? toggleOut.checked : false;
+
+  if (dirBtnGoing) {
+    if (outActive) {
+      dirBtnGoing.style.borderColor = "#ff4d4d";
+      dirBtnGoing.style.background = "rgba(255, 77, 77, 0.25)";
+      dirBtnGoing.style.color = "#fff";
+      dirBtnGoing.style.boxShadow = "0 0 10px rgba(255, 77, 77, 0.3)";
+    } else {
+      dirBtnGoing.style.borderColor = "rgba(255, 255, 255, 0.12)";
+      dirBtnGoing.style.background = "rgba(255, 255, 255, 0.04)";
+      dirBtnGoing.style.color = "var(--text-dim)";
+      dirBtnGoing.style.boxShadow = "none";
+    }
+  }
+
+  if (dirBtnComing) {
+    if (inActive) {
+      dirBtnComing.style.borderColor = "#3ddc84";
+      dirBtnComing.style.background = "rgba(61, 220, 132, 0.25)";
+      dirBtnComing.style.color = "#fff";
+      dirBtnComing.style.boxShadow = "0 0 10px rgba(61, 220, 132, 0.3)";
+    } else {
+      dirBtnComing.style.borderColor = "rgba(255, 255, 255, 0.12)";
+      dirBtnComing.style.background = "rgba(255, 255, 255, 0.04)";
+      dirBtnComing.style.color = "var(--text-dim)";
+      dirBtnComing.style.boxShadow = "none";
+    }
+  }
+}
+
+if (dirBtnGoing) {
+  dirBtnGoing.addEventListener("click", () => {
+    const toggleIn = document.getElementById("toggle-in");
+    const toggleOut = document.getElementById("toggle-out");
+    if (toggleOut) toggleOut.checked = true;
+    if (toggleIn) toggleIn.checked = false;
+    document.querySelectorAll(".line-out-check").forEach(c => c.checked = true);
+    document.querySelectorAll(".line-in-check").forEach(c => c.checked = false);
+    syncDirectionButtons();
+    updateSidebarRules();
+  });
+}
+
+if (dirBtnComing) {
+  dirBtnComing.addEventListener("click", () => {
+    const toggleIn = document.getElementById("toggle-in");
+    const toggleOut = document.getElementById("toggle-out");
+    if (toggleIn) toggleIn.checked = true;
+    if (toggleOut) toggleOut.checked = false;
+    document.querySelectorAll(".line-in-check").forEach(c => c.checked = true);
+    document.querySelectorAll(".line-out-check").forEach(c => c.checked = false);
+    syncDirectionButtons();
+    updateSidebarRules();
+  });
+}
+
+// Going Vehicles (Backside) Only Preset Handler
+const presetGoingOnlyBtn = document.getElementById("preset-going-only-btn");
+if (presetGoingOnlyBtn) {
+  presetGoingOnlyBtn.addEventListener("click", () => {
+    const toggleIn = document.getElementById("toggle-in");
+    const toggleOut = document.getElementById("toggle-out");
+    const directionModeSelect = document.getElementById("direction-mode-select");
+
+    if (directionModeSelect) directionModeSelect.value = "COMING_GOING";
+    if (toggleIn) toggleIn.checked = false;
+    if (toggleOut) toggleOut.checked = true;
+
+    // Check all OUT lines, uncheck IN lines
+    document.querySelectorAll(".line-in-check").forEach(chk => chk.checked = false);
+    document.querySelectorAll(".line-out-check").forEach(chk => chk.checked = true);
+
+    syncDirectionButtons();
+    updateSidebarRules();
+    alert("🔴 Configured for Going Vehicles (Backside) Only!\n\n- Green Boxes: GOING Vehicles (Counting)\n- Red Boxes: COMING Vehicles (Not Counting)\n- Only vehicles moving forward showing backside/tail will be counted.");
   });
 }
 
@@ -409,6 +524,11 @@ function renderLines(lines, directionMode) {
   const isInActive = toggleIn ? toggleIn.checked : true;
   const isOutActive = toggleOut ? toggleOut.checked : true;
 
+  if (!isInActive && !isOutActive) {
+    sideLinesBlock.hidden = true;
+    return;
+  }
+
   const enabledIn = Array.from(document.querySelectorAll(".line-in-check:checked")).map(c => c.value.toLowerCase());
   const enabledOut = Array.from(document.querySelectorAll(".line-out-check:checked")).map(c => c.value.toLowerCase());
 
@@ -422,46 +542,68 @@ function renderLines(lines, directionMode) {
 
   sideLinesBlock.hidden = false;
 
-  let html = `
-    <div class="live-flow-summary-badge" style="display: flex; gap: 8px; margin-bottom: 10px;">
-      <div style="flex: 1; background: rgba(16, 185, 129, 0.12); border: 1px solid #10b981; border-radius: 8px; padding: 6px 10px; text-align: center;">
-        <span style="font-size: 0.7rem; color: #3ddc84; font-weight: 700; display: block;">🟢 IN FLOW</span>
-        <span style="font-size: 1rem; color: #fff; font-weight: 800;">${isInActive ? totalInCount : 'OFF'}</span>
-      </div>
-      <div style="flex: 1; background: rgba(239, 68, 68, 0.12); border: 1px solid #ef4444; border-radius: 8px; padding: 6px 10px; text-align: center;">
-        <span style="font-size: 0.7rem; color: #ff4d4d; font-weight: 700; display: block;">🔴 OUT FLOW</span>
-        <span style="font-size: 1rem; color: #fff; font-weight: 800;">${isOutActive ? totalOutCount : 'OFF'}</span>
-      </div>
-    </div>
-  `;
+  let html = `<div class="live-flow-summary-badge" style="display: flex; gap: 8px; margin-bottom: 10px;">`;
+  if (isInActive) {
+    html += `
+      <div style="flex: 1; background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; border-radius: 8px; padding: 6px 10px; text-align: center;">
+        <span style="font-size: 0.7rem; color: #3ddc84; font-weight: 700; display: block;">🟢 COMING FLOW</span>
+        <span style="font-size: 1.1rem; color: #fff; font-weight: 800;">${totalInCount}</span>
+      </div>`;
+  }
+  if (isOutActive) {
+    html += `
+      <div style="flex: 1; background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; border-radius: 8px; padding: 6px 10px; text-align: center;">
+        <span style="font-size: 0.7rem; color: #ff4d4d; font-weight: 700; display: block;">🔴 GOING FLOW (Back)</span>
+        <span style="font-size: 1.1rem; color: #fff; font-weight: 800;">${totalOutCount}</span>
+      </div>`;
+  }
+  html += `</div>`;
 
-  html += entries.map(([name, v], i) => {
+  let activeLineCardsHtml = "";
+
+  entries.forEach(([name, v], i) => {
     const sideKey = name.replace(" Line", "").toLowerCase();
     const inActive = isInActive && (enabledIn.length === 0 || enabledIn.includes(sideKey));
     const outActive = isOutActive && (enabledOut.length === 0 || enabledOut.includes(sideKey));
 
-    return `
-      <div class="line-row" style="flex-direction: column; align-items: stretch; gap: 4px; padding: 8px 10px; background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 8px; margin-bottom: 6px;">
+    // Auto-hide lines that are NOT active in the enabled rules
+    if (!inActive && !outActive) return;
+
+    let lineTotal = 0;
+    if (inActive) lineTotal += (v.in || 0);
+    if (outActive) lineTotal += (v.out || 0);
+
+    activeLineCardsHtml += `
+      <div class="line-row" style="flex-direction: column; align-items: stretch; gap: 4px; padding: 8px 10px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; margin-bottom: 6px;">
         <div style="display: flex; align-items: center; justify-content: space-between;">
           <span class="line-row-name" style="font-weight: 700; font-size: 0.82rem; color: #fff;">
             <span class="line-dot" style="background:${LINE_COLORS[i % LINE_COLORS.length]}"></span>
             ${escapeHtml(name)}
           </span>
-          <span style="font-size: 0.75rem; color: var(--text-dim); font-weight: 600;">Total: ${(v.in || 0) + (v.out || 0)}</span>
+          <span style="font-size: 0.78rem; color: #3ddc84; font-weight: 700;">Active: ${lineTotal}</span>
         </div>
-        <div style="display: flex; gap: 6px; margin-top: 2px;">
-          <span style="flex: 1; font-size: 0.72rem; padding: 3px 6px; border-radius: 5px; background: ${inActive ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255,255,255,0.03)'}; color: ${inActive ? '#3ddc84' : 'var(--text-dim)'}; border: 1px solid ${inActive ? 'rgba(16, 185, 129, 0.3)' : 'transparent'}; font-weight: 600; text-align: center;">
-            ⬆️ IN: ${v.in || 0}
-          </span>
-          <span style="flex: 1; font-size: 0.72rem; padding: 3px 6px; border-radius: 5px; background: ${outActive ? 'rgba(239, 68, 68, 0.15)' : 'rgba(255,255,255,0.03)'}; color: ${outActive ? '#ff4d4d' : 'var(--text-dim)'}; border: 1px solid ${outActive ? 'rgba(239, 68, 68, 0.3)' : 'transparent'}; font-weight: 600; text-align: center;">
-            ⬇️ OUT: ${v.out || 0}
-          </span>
-        </div>
-      </div>
-    `;
-  }).join("");
+        <div style="display: flex; gap: 6px; margin-top: 4px;">`;
 
-  lineRows.innerHTML = html;
+    if (inActive) {
+      activeLineCardsHtml += `
+          <span style="flex: 1; font-size: 0.72rem; padding: 4px 6px; border-radius: 5px; background: rgba(16, 185, 129, 0.18); color: #3ddc84; border: 1px solid rgba(16, 185, 129, 0.4); font-weight: 700; text-align: center;">
+            🟢 COMING: ${v.in || 0}
+          </span>`;
+    }
+
+    if (outActive) {
+      activeLineCardsHtml += `
+          <span style="flex: 1; font-size: 0.72rem; padding: 4px 6px; border-radius: 5px; background: rgba(239, 68, 68, 0.18); color: #ff4d4d; border: 1px solid rgba(239, 68, 68, 0.4); font-weight: 700; text-align: center;">
+            🔴 GOING (Tail): ${v.out || 0}
+          </span>`;
+    }
+
+    activeLineCardsHtml += `
+        </div>
+      </div>`;
+  });
+
+  lineRows.innerHTML = html + activeLineCardsHtml;
 }
 
 function renderCategories(categories) {
