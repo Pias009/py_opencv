@@ -352,13 +352,38 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                                     cv2.line(frame, (ln.x1, ln.y1), (ln.x2, ln.y2), (0, 255, 0), 5)
 
                 if needs_vis:
-                    # Draw track annotation box & centroid trail
-                    x1, y1, x2, y2 = (int(v) for v in box)
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    # Front/Facing vs Tail/Receding Motion Classifier
+                    # dy > 0 -> Vehicle moving down towards camera (Facing Front)
+                    # dy < 0 -> Vehicle moving up away from camera (Tail/Back)
+                    motion_dir = "COMING"
+                    box_color = (0, 255, 128)  # Vibrant Emerald Green for Coming Front Face
+                    dir_arrow = "v"
 
-                    label = f"#{track_id} {tr['best_category']} ({conf:.2f})"
+                    if len(history) >= 2:
+                        dy = history[-1][1] - history[0][1]
+                        if dy < -2:
+                            motion_dir = "GOING"
+                            box_color = (0, 96, 255)  # Bright Coral Red/Orange for Going Back
+                            dir_arrow = "^"
+
+                    cur_dir_mode = job.get("direction_mode", "COMING_GOING")
+                    if cur_dir_mode == "COMING_GOING":
+                        tag = f"[{motion_dir}]"
+                    elif cur_dir_mode == "FORWARD_BACKWARD":
+                        tag = "[FORWARD]" if motion_dir == "COMING" else "[BACKWARD]"
+                    else:
+                        tag = "[IN]" if motion_dir == "COMING" else "[OUT]"
+
+                    x1, y1, x2, y2 = (int(v) for v in box)
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
+
+                    label = f"#{track_id} {tr['best_category']} {tag} ({conf:.2f})"
                     cv2.putText(frame, label, (x1, max(15, y1 - 8)),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, box_color, 2)
+
+                    # Draw direction arrow indicator
+                    center_pt = (int((x1 + x2) / 2), int((y1 + y2) / 2))
+                    cv2.putText(frame, dir_arrow, center_pt, cv2.FONT_HERSHEY_SIMPLEX, 0.7, box_color, 2)
 
                     # Draw movement trail
                     for j in range(1, len(history)):

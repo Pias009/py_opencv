@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vehicle Counter</title>
-<link rel="stylesheet" href="/static/style.css?v=11.0">
+<link rel="stylesheet" href="/static/style.css?v=12.0">
 </head>
 <body>
 <!--
@@ -88,7 +88,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
           <input id="file-input" type="file" accept=".mp4,.avi,.mov,.mkv,.webm" hidden>
         </div>
       </div>
-      <div class="field-row" style="margin-top: 14px;">
+      <div class="field-row" style="margin-top: 14px; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;">
         <div class="field">
           <div style="display: flex; align-items: center; justify-content: space-between;">
             <label for="line-mode-select">Auto Lane / Boundary Mode</label>
@@ -99,6 +99,17 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
             <option value="box">🎯 4-Way Intersection Box (Auto Centered)</option>
             <option value="horizontal">➖ Single Horizontal Boundary Line</option>
             <option value="vertical">Vertical Boundary Line</option>
+          </select>
+        </div>
+        <div class="field">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <label for="direction-mode-select">Traffic Naming &amp; Direction Mode</label>
+            <button type="button" class="info-trigger" data-ref="direction" title="View Direction Modes">ℹ️</button>
+          </div>
+          <select id="direction-mode-select" class="speed-select">
+            <option value="COMING_GOING" selected>🚘 Coming Forward (Face) vs Going Backward (Tail)</option>
+            <option value="FORWARD_BACKWARD">⬆️ Forward Direction vs ⬇️ Backward Direction</option>
+            <option value="IN_OUT">🟢 IN (Entering) vs 🔴 OUT (Exiting)</option>
           </select>
         </div>
         <div class="field">
@@ -150,8 +161,8 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
               <div class="flow-main-content">
                 <span class="flow-main-icon">🟢</span>
                 <div class="flow-main-text">
-                  <span class="flow-main-title">IN Flow (Incoming Vehicles)</span>
-                  <span class="flow-main-sub">Count vehicles entering the intersection</span>
+                  <span class="flow-main-title" id="flow1-title">🚘 Coming Flow (Front / Facing Camera)</span>
+                  <span class="flow-main-sub" id="flow1-sub">Count vehicles moving forward showing front face towards camera</span>
                 </div>
               </div>
               <div class="flow-main-actions">
@@ -162,38 +173,38 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
           </div>
 
           <div class="flow-box-sides" id="in-sides-box">
-            <span class="sides-label">Select Which Sides / Lanes to Count for IN:</span>
+            <span class="sides-label">Select Which Sides / Lanes to Count for Coming:</span>
             <div class="sides-grid">
-              <label class="side-chip side-in-chip" data-tip="Count IN vehicles crossing North side">
+              <label class="side-chip side-in-chip" data-tip="Count Coming vehicles crossing North side">
                 <input type="checkbox" class="line-in-check" value="North" checked hidden>
-                <span>⬆️ North IN</span>
+                <span class="chip-text-in">⬆️ North Coming</span>
               </label>
-              <label class="side-chip side-in-chip" data-tip="Count IN vehicles crossing South side">
+              <label class="side-chip side-in-chip" data-tip="Count Coming vehicles crossing South side">
                 <input type="checkbox" class="line-in-check" value="South" checked hidden>
-                <span>⬇️ South IN</span>
+                <span class="chip-text-in">⬇️ South Coming</span>
               </label>
-              <label class="side-chip side-in-chip" data-tip="Count IN vehicles crossing West side">
+              <label class="side-chip side-in-chip" data-tip="Count Coming vehicles crossing West side">
                 <input type="checkbox" class="line-in-check" value="West" checked hidden>
-                <span>⬅️ West IN</span>
+                <span class="chip-text-in">⬅️ West Coming</span>
               </label>
-              <label class="side-chip side-in-chip" data-tip="Count IN vehicles crossing East side">
+              <label class="side-chip side-in-chip" data-tip="Count Coming vehicles crossing East side">
                 <input type="checkbox" class="line-in-check" value="East" checked hidden>
-                <span>➡️ East IN</span>
+                <span class="chip-text-in">➡️ East Coming</span>
               </label>
             </div>
           </div>
         </div>
 
-        <!-- 🔴 OUT FLOW BOX -->
+        <!-- 🔴 OUT / GOING FLOW BOX -->
         <div class="flow-config-box flow-config-out" style="margin-top: 14px;">
           <div class="flow-box-header">
-            <label class="flow-main-toggle" data-tip="Enable or disable OUT vehicle counting">
+            <label class="flow-main-toggle" data-tip="Enable or disable OUT / Going vehicle counting">
               <input type="checkbox" id="toggle-out" checked hidden>
               <div class="flow-main-content">
                 <span class="flow-main-icon">🔴</span>
                 <div class="flow-main-text">
-                  <span class="flow-main-title">OUT Flow (Outgoing Vehicles)</span>
-                  <span class="flow-main-sub">Count vehicles exiting the intersection</span>
+                  <span class="flow-main-title" id="flow2-title">🚗 Going Flow (Back / Receding Camera)</span>
+                  <span class="flow-main-sub" id="flow2-sub">Count vehicles moving backward seeing tail / back away from camera</span>
                 </div>
               </div>
               <div class="flow-main-actions">
@@ -386,6 +397,6 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   </div>
 </div>
 
-<script src="/static/app.js?v=11.0"></script>
+<script src="/static/app.js?v=12.0"></script>
 </body>
 </html>
