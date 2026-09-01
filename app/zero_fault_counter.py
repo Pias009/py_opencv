@@ -299,10 +299,7 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
 
                 cx, cy = get_centroid(box)
 
-                bw, bh = box[2] - box[0], box[3] - box[1]
-                box_area = max(1.0, float(bw * bh))
-                area_weight = max(0.5, (box_area ** 0.5) / 100.0)
-                vote_weight = float(conf) * area_weight
+                vote_weight = float(conf)
 
                 if track_id not in track_data:
                     track_data[track_id] = {
