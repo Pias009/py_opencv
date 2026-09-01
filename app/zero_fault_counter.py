@@ -423,22 +423,31 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
 
                     # Zone Corridor Pass-Through Check (Outgoing vehicles counted, incoming strictly rejected):
                     tot_travel = ((p_curr[0] - history[0][0])**2 + (p_curr[1] - history[0][1])**2)**0.5
-                    if tot_travel >= 12.0 and len(history) >= 4:
+                    cat = tr["best_category"]
+                    is_heavy = cat in ["Large Bus", "Medium Truck/2-Axle Truck", "Truck", "Bus"]
+
+                    min_travel = 18.0 if is_heavy else 10.0
+                    min_frames = 5 if is_heavy else 3
+
+                    if tot_travel >= min_travel and len(history) >= min_frames:
                         # STRICT DIRECTION GATE:
                         if (not enable_in) and is_coming_vehicle:
                             pass  # Strictly REJECT incoming vehicles on right lane
                         elif (not enable_out) and is_going_vehicle:
                             pass  # Strictly REJECT outgoing vehicles
                         else:
-                            cat = tr["best_category"]
-
                             # --- Spatial/Temporal Re-Identification De-Duplication ---
-                            # Prevent ByteTrack ID flickering from double-counting the same physical bus
+                            # Prevent ByteTrack ID flickering & class switching from double-counting Large Buses
                             is_duplicate = False
                             for r_cat, r_x, r_y, r_f in recent_counted_vehicles:
-                                if r_cat == cat and (frame_idx - r_f) <= 60:
+                                r_is_heavy = r_cat in ["Large Bus", "Medium Truck/2-Axle Truck", "Truck", "Bus"]
+                                cat_match = (r_cat == cat) or (is_heavy and r_is_heavy)
+
+                                max_frames = 120 if is_heavy else 75
+                                if cat_match and (frame_idx - r_f) <= max_frames:
                                     dist_recent = ((cx - r_x)**2 + (cy - r_y)**2)**0.5
-                                    if dist_recent <= 120.0:
+                                    max_dist = 180.0 if is_heavy else 110.0
+                                    if dist_recent <= max_dist:
                                         is_duplicate = True
                                         break
 
@@ -466,7 +475,7 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                                 # Mark globally counted so each vehicle is counted EXACTLY ONCE
                                 tr["globally_counted"] = True
                                 recent_counted_vehicles.append((cat, cx, cy, frame_idx))
-                                if len(recent_counted_vehicles) > 100:
+                                if len(recent_counted_vehicles) > 150:
                                     recent_counted_vehicles.pop(0)
 
                                 categories_summary[cat] = categories_summary.get(cat, 0) + 1
