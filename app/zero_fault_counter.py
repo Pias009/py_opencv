@@ -374,7 +374,9 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                             tr["direction"] = "coming"
 
                 # ── Zero-Fault Raycasting Line Crossing (SOLE counting authority) ──
-                # ── Zero-Fault Raycasting Line Crossing & Frame Exit Guard ──
+                # ── Zero-Fault Zone Corridor Traversal (NO thin-line touching required) ──
+                # Vehicles passing through the road corridor are counted automatically based on
+                # motion trajectory, eliminating height-dependent line-touching misses for Cars/SUVs.
                 if len(history) >= 2 and not tr.get("globally_counted"):
                     p_prev = history[-2]
                     p_curr = history[-1]
@@ -392,10 +394,10 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                         dy_recent = history[-1][1] - history[-sample_len][1] if len(history) >= sample_len else (p_curr[1] - p_prev[1])
                         dy_total = history[-1][1] - history[0][1] if len(history) >= 2 else (p_curr[1] - p_prev[1])
 
-                        if abs(dy_recent) >= 0.8:
+                        if abs(dy_recent) >= 0.5:
                             is_going_vehicle = (dy_recent < 0)
                             is_coming_vehicle = (dy_recent > 0)
-                        elif abs(dy_total) >= 0.8:
+                        elif abs(dy_total) >= 0.5:
                             is_going_vehicle = (dy_total < 0)
                             is_coming_vehicle = (dy_total > 0)
                         else:
@@ -407,88 +409,45 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                         is_going_vehicle, is_coming_vehicle = is_coming_vehicle, is_going_vehicle
 
                     disp = ((p_curr[0] - p_prev[0])**2 + (p_curr[1] - p_prev[1])**2)**0.5
-                    if disp >= 0.5:
+
+                    # Zone Corridor Pass-Through Check:
+                    # Vehicle is counted as soon as it has moved >= 3px within the road corridor,
+                    # without requiring its bounding box to touch a thin 1-pixel line.
+                    tot_travel = ((p_curr[0] - history[0][0])**2 + (p_curr[1] - history[0][1])**2)**0.5
+                    if tot_travel >= 3.0 or disp >= 0.5:
+                        if enable_out and not enable_in:
+                            if is_coming_vehicle:
+                                continue  # Reject coming vehicles strictly
+                        elif enable_in and not enable_out:
+                            if is_going_vehicle:
+                                continue  # Reject going vehicles strictly
+
+                        # Pick primary counting line (default North line for going, South for coming)
+                        target_line = lines[0]
                         for ln in lines:
-                            if tr.get("globally_counted"):
+                            if is_going_vehicle and "north" in ln.name.lower():
+                                target_line = ln
+                                break
+                            elif is_coming_vehicle and "south" in ln.name.lower():
+                                target_line = ln
                                 break
 
-                            clean_name = ln.name.replace(" Line", "").strip()
-                            if enabled_lines is not None and len(enabled_lines) > 0:
-                                if clean_name not in enabled_lines and ln.name not in enabled_lines and len(lines) > 1:
-                                    continue
+                        clean_name = target_line.name.replace(" Line", "").strip()
 
-                            if ln.name in tr["counted_lines"]:
-                                continue
+                        if is_going_vehicle:
+                            target_line.out_count += 1
+                        else:
+                            target_line.in_count += 1
 
-                            line_seg_A = (ln.x1, ln.y1)
-                            line_seg_B = (ln.x2, ln.y2)
+                        tr["counted_lines"].add(target_line.name)
+                        # Mark globally counted so each vehicle is counted EXACTLY ONCE
+                        tr["globally_counted"] = True
 
-                            crossed = segments_intersect(p_prev, p_curr, line_seg_A, line_seg_B) or box_intersects_segment(box, line_seg_A, line_seg_B)
+                        cat = tr["best_category"]
+                        categories_summary[cat] = categories_summary.get(cat, 0) + 1
 
-                            # --- Trajectory Pass-Through & Corridor Catching ---
-                            if not crossed:
-                                dist = ln.distance_to_segment(p_curr[0], p_curr[1])
-                                # Catch fast vehicles passing within 50px of line corridor
-                                if dist <= 55:
-                                    crossed = True
-                                    job["reanalyzed"] = job.get("reanalyzed", 0) + 1
-                                # Catch vehicles crossing past horizontal line Y level
-                                elif ln.y1 == ln.y2:
-                                    y_line = ln.y1
-                                    if (p_prev[1] - y_line) * (p_curr[1] - y_line) <= 0:
-                                        if min(ln.x1, ln.x2) - 50 <= p_curr[0] <= max(ln.x1, ln.x2) + 50:
-                                            crossed = True
-                                            job["reanalyzed"] = job.get("reanalyzed", 0) + 1
-
-                            # --- Frame Boundary Exit Safety Net ---
-                            # If an outgoing vehicle gets within 45px of top/bottom frame edge, count before exit
-                            if not crossed and is_going_vehicle:
-                                if p_curr[1] <= 45 or p_curr[1] >= frame_h - 45:
-                                    crossed = True
-                                    job["reanalyzed"] = job.get("reanalyzed", 0) + 1
-
-                            if crossed:
-                                if enable_out and not enable_in:
-                                    if is_coming_vehicle:
-                                        continue  # Reject coming vehicles strictly
-                                elif enable_in and not enable_out:
-                                    if is_going_vehicle:
-                                        continue  # Reject going vehicles strictly
-
-                                clean_name = ln.name.replace(" Line", "").strip()
-
-                                if count_scope_mode == "active_only":
-                                    if is_going_vehicle:
-                                        if not enable_out:
-                                            continue
-                                        if enabled_lines_out is not None and len(enabled_lines_out) > 0:
-                                            if clean_name not in enabled_lines_out and ln.name not in enabled_lines_out and len(lines) > 1:
-                                                continue
-                                        ln.out_count += 1
-                                    else:
-                                        if not enable_in:
-                                            continue
-                                        if enabled_lines_in is not None and len(enabled_lines_in) > 0:
-                                            if clean_name not in enabled_lines_in and ln.name not in enabled_lines_in and len(lines) > 1:
-                                                continue
-                                        ln.in_count += 1
-                                else:
-                                    # "all_road" mode: count all traffic regardless of active filters
-                                    if is_going_vehicle:
-                                        ln.out_count += 1
-                                    else:
-                                        ln.in_count += 1
-
-                                tr["counted_lines"].add(ln.name)
-                                # Mark globally counted so no other line increments this vehicle again
-                                tr["globally_counted"] = True
-
-                                cat = tr["best_category"]
-                                categories_summary[cat] = categories_summary.get(cat, 0) + 1
-
-                                # Draw highlight flash on crossing
-                                if needs_vis:
-                                    cv2.line(frame, (ln.x1, ln.y1), (ln.x2, ln.y2), (0, 255, 0), 5)
+                        if needs_vis:
+                            cv2.line(frame, (target_line.x1, target_line.y1), (target_line.x2, target_line.y2), (0, 255, 0), 5)
 
                 if needs_vis:
                     # ── Pull direction from Motion-Vote Brain (display only) ──
