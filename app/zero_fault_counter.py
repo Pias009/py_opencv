@@ -410,44 +410,40 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
 
                     disp = ((p_curr[0] - p_prev[0])**2 + (p_curr[1] - p_prev[1])**2)**0.5
 
-                    # Zone Corridor Pass-Through Check:
-                    # Vehicle is counted as soon as it has moved >= 3px within the road corridor,
-                    # without requiring its bounding box to touch a thin 1-pixel line.
+                    # Zone Corridor Pass-Through Check (Outgoing vehicles counted, incoming strictly rejected):
                     tot_travel = ((p_curr[0] - history[0][0])**2 + (p_curr[1] - history[0][1])**2)**0.5
                     if tot_travel >= 3.0 or disp >= 0.5:
-                        if enable_out and not enable_in:
-                            if is_coming_vehicle:
-                                continue  # Reject coming vehicles strictly
-                        elif enable_in and not enable_out:
-                            if is_going_vehicle:
-                                continue  # Reject going vehicles strictly
-
-                        # Pick primary counting line (default North line for going, South for coming)
-                        target_line = lines[0]
-                        for ln in lines:
-                            if is_going_vehicle and "north" in ln.name.lower():
-                                target_line = ln
-                                break
-                            elif is_coming_vehicle and "south" in ln.name.lower():
-                                target_line = ln
-                                break
-
-                        clean_name = target_line.name.replace(" Line", "").strip()
-
-                        if is_going_vehicle:
-                            target_line.out_count += 1
+                        if not enable_in and is_coming_vehicle:
+                            pass  # Strictly reject incoming vehicles — do NOT count
+                        elif not enable_out and is_going_vehicle:
+                            pass  # Strictly reject outgoing vehicles — do NOT count
                         else:
-                            target_line.in_count += 1
+                            # Pick primary counting line (default North line for going, South for coming)
+                            target_line = lines[0]
+                            for ln in lines:
+                                if is_going_vehicle and "north" in ln.name.lower():
+                                    target_line = ln
+                                    break
+                                elif is_coming_vehicle and "south" in ln.name.lower():
+                                    target_line = ln
+                                    break
 
-                        tr["counted_lines"].add(target_line.name)
-                        # Mark globally counted so each vehicle is counted EXACTLY ONCE
-                        tr["globally_counted"] = True
+                            clean_name = target_line.name.replace(" Line", "").strip()
 
-                        cat = tr["best_category"]
-                        categories_summary[cat] = categories_summary.get(cat, 0) + 1
+                            if is_going_vehicle:
+                                target_line.out_count += 1
+                            else:
+                                target_line.in_count += 1
 
-                        if needs_vis:
-                            cv2.line(frame, (target_line.x1, target_line.y1), (target_line.x2, target_line.y2), (0, 255, 0), 5)
+                            tr["counted_lines"].add(target_line.name)
+                            # Mark globally counted so each vehicle is counted EXACTLY ONCE
+                            tr["globally_counted"] = True
+
+                            cat = tr["best_category"]
+                            categories_summary[cat] = categories_summary.get(cat, 0) + 1
+
+                            if needs_vis:
+                                cv2.line(frame, (target_line.x1, target_line.y1), (target_line.x2, target_line.y2), (0, 255, 0), 5)
 
                 if needs_vis:
                     # ── Pull direction from Motion-Vote Brain (display only) ──
@@ -456,9 +452,12 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                     votes_g = tr.get("votes_going",  0)
                     votes_c = tr.get("votes_coming", 0)
                     tot_v   = max(1, votes_g + votes_c)
-                    conf_pct = int(max(votes_g, votes_c) / tot_v * 100)
 
-                    # Direction from accumulated votes (for arrow display)
+                    # Determine motion direction
+                    sample_len = min(5, len(history))
+                    dy_recent = history[-1][1] - history[-sample_len][1] if len(history) >= sample_len else 0
+                    is_coming_now = (locked_dir == "coming") or (dy_recent > 0)
+
                     if locked_dir == "going":
                         motion_dir = "GOING"
                         dir_arrow  = "^"
@@ -466,27 +465,25 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                         motion_dir = "COMING"
                         dir_arrow  = "v"
                     elif votes_g > votes_c:
-                        motion_dir = "GOING?"     # not yet confirmed
+                        motion_dir = "GOING?"
                         dir_arrow  = "^"
                     elif votes_c > votes_g:
-                        motion_dir = "COMING?"    # not yet confirmed
+                        motion_dir = "COMING?"
                         dir_arrow  = "v"
                     else:
                         motion_dir = "?"
                         dir_arrow  = "?"
 
-                    # ── Box Color Logic (Clean Cyan/Green for Outgoing) ─────────
-                    # GREEN  = Counted ✓
-                    # CYAN   = Active Outgoing/Incoming Tracking (will count)
+                    # ── Box Color Logic (RED for Incoming when OFF, CYAN for Active Outgoing, GREEN for Counted) ──
                     if is_already_counted:
                         box_color    = (0, 255, 60)     # GREEN — counted ✓
                         status_label = "COUNTED"
+                    elif not enable_in and (is_coming_now or locked_dir == "coming"):
+                        box_color    = (0, 0, 255)      # BRIGHT RED — incoming (NOT COUNTING)
+                        status_label = "NOT COUNTING"
                     elif locked_dir == "going" or votes_g >= votes_c:
                         box_color    = (255, 220, 0)    # CYAN — outgoing active
                         status_label = "OUTGOING"
-                    elif locked_dir == "coming":
-                        box_color    = (255, 220, 0)    # CYAN — incoming active
-                        status_label = "INCOMING"
                     else:
                         box_color    = (255, 220, 0)    # CYAN — active tracking
                         status_label = "TRACKING"

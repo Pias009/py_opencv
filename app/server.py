@@ -259,7 +259,7 @@ def api_start():
 
     line_mode = request.form.get("line_mode", "box")
     invert_direction = request.form.get("invert", "false").lower() == "true"
-    enable_in = request.form.get("enable_in", "true").lower() == "true"
+    enable_in = request.form.get("enable_in", "false").lower() == "true"
     enable_out = request.form.get("enable_out", "true").lower() == "true"
     count_scope_mode = request.form.get("count_scope_mode", "active_only")
     direction_mode = request.form.get("direction_mode", "IN_OUT")
