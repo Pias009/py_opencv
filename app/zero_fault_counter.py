@@ -377,21 +377,45 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                             tr["direction"] = "coming"
 
                 # ── Zero-Fault Raycasting Line Crossing (SOLE counting authority) ──
-                # Each physical vehicle is counted at most ONCE globally.
-                # tr["globally_counted"] prevents counting the same bus multiple
-                # times just because it crosses 2-4 box sides.
+                # ── Zero-Fault Raycasting Line Crossing & Frame Exit Guard ──
                 if len(history) >= 2 and not tr.get("globally_counted"):
                     p_prev = history[-2]
                     p_curr = history[-1]
 
+                    # Determine vehicle motion direction cleanly
+                    locked_dir = tr.get("direction")
+                    if locked_dir == "going":
+                        is_going_vehicle = True
+                        is_coming_vehicle = False
+                    elif locked_dir == "coming":
+                        is_going_vehicle = False
+                        is_coming_vehicle = True
+                    else:
+                        sample_len = min(5, len(history))
+                        dy_recent = history[-1][1] - history[-sample_len][1] if len(history) >= sample_len else (p_curr[1] - p_prev[1])
+                        dy_total = history[-1][1] - history[0][1] if len(history) >= 2 else (p_curr[1] - p_prev[1])
+
+                        if abs(dy_recent) >= 0.8:
+                            is_going_vehicle = (dy_recent < 0)
+                            is_coming_vehicle = (dy_recent > 0)
+                        elif abs(dy_total) >= 0.8:
+                            is_going_vehicle = (dy_total < 0)
+                            is_coming_vehicle = (dy_total > 0)
+                        else:
+                            dy_step = p_curr[1] - p_prev[1]
+                            is_going_vehicle = (dy_step < 0)
+                            is_coming_vehicle = (dy_step >= 0)
+
+                    if inverted_state:
+                        is_going_vehicle, is_coming_vehicle = is_coming_vehicle, is_going_vehicle
+
                     disp = ((p_curr[0] - p_prev[0])**2 + (p_curr[1] - p_prev[1])**2)**0.5
-                    if disp >= 1.2:
+                    if disp >= 0.5:
                         for ln in lines:
                             if tr.get("globally_counted"):
-                                break   # already counted by an earlier line this frame
+                                break
 
                             clean_name = ln.name.replace(" Line", "").strip()
-                            # Skip line if toggled off by user
                             if enabled_lines is not None and len(enabled_lines) > 0:
                                 if clean_name not in enabled_lines and ln.name not in enabled_lines and len(lines) > 1:
                                     continue
@@ -403,53 +427,28 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                             line_seg_B = (ln.x2, ln.y2)
 
                             crossed = segments_intersect(p_prev, p_curr, line_seg_A, line_seg_B) or box_intersects_segment(box, line_seg_A, line_seg_B)
-                            chk_prev = p_prev
-                            chk_curr = p_curr
 
-                            # --- Self-Healing Re-Scan (tightened to 30px to avoid false triggers) ---
-                            # Only re-scan sub-trajectories for genuinely missed strided crossings.
-                            if not crossed and len(history) >= 2:
+                            # --- Trajectory Pass-Through & Corridor Catching ---
+                            if not crossed:
                                 dist = ln.distance_to_segment(p_curr[0], p_curr[1])
-                                if dist <= 30:  # was 60px — tightened to prevent phantom hits
-                                    sub_pts = history[-5:]
-                                    for k in range(1, len(sub_pts)):
-                                        if segments_intersect(sub_pts[k-1], sub_pts[k], line_seg_A, line_seg_B):
+                                # Catch fast vehicles passing within 50px of line corridor
+                                if dist <= 55:
+                                    crossed = True
+                                    job["reanalyzed"] = job.get("reanalyzed", 0) + 1
+                                # Catch vehicles crossing past horizontal line Y level
+                                elif ln.y1 == ln.y2:
+                                    y_line = ln.y1
+                                    if (p_prev[1] - y_line) * (p_curr[1] - y_line) <= 0:
+                                        if min(ln.x1, ln.x2) - 50 <= p_curr[0] <= max(ln.x1, ln.x2) + 50:
                                             crossed = True
-                                            chk_prev = sub_pts[k-1]
-                                            chk_curr = sub_pts[k]
                                             job["reanalyzed"] = job.get("reanalyzed", 0) + 1
-                                            break
-                                    # NOTE: The aggressive "force crossing if within 40px" fallback
-                                    # has been removed — it caused buses near the North line edge
-                                    # to be counted without actually crossing it.
 
-                            if crossed:
-                                # Determine vehicle motion direction cleanly and mutually exclusively
-                                locked_dir = tr.get("direction")
-                                if locked_dir == "going":
-                                    is_going_vehicle = True
-                                    is_coming_vehicle = False
-                                elif locked_dir == "coming":
-                                    is_going_vehicle = False
-                                    is_coming_vehicle = True
-                                else:
-                                    sample_len = min(5, len(history))
-                                    dy_recent = history[-1][1] - history[-sample_len][1] if len(history) >= sample_len else (chk_curr[1] - chk_prev[1])
-                                    dy_total = history[-1][1] - history[0][1] if len(history) >= 2 else (chk_curr[1] - chk_prev[1])
-
-                                    if abs(dy_recent) >= 1.0:
-                                        is_going_vehicle = (dy_recent < 0)
-                                        is_coming_vehicle = (dy_recent > 0)
-                                    elif abs(dy_total) >= 1.0:
-                                        is_going_vehicle = (dy_total < 0)
-                                        is_coming_vehicle = (dy_total > 0)
-                                    else:
-                                        dy_step = chk_curr[1] - chk_prev[1]
-                                        is_going_vehicle = (dy_step < 0)
-                                        is_coming_vehicle = (dy_step >= 0)
-
-                                if inverted_state:
-                                    is_going_vehicle, is_coming_vehicle = is_coming_vehicle, is_going_vehicle
+                            # --- Frame Boundary Exit Safety Net ---
+                            # If an outgoing vehicle gets within 45px of top/bottom frame edge, count before exit
+                            if not crossed and is_going_vehicle:
+                                if p_curr[1] <= 45 or p_curr[1] >= frame_h - 45:
+                                    crossed = True
+                                    job["reanalyzed"] = job.get("reanalyzed", 0) + 1
 
                                 if enable_out and not enable_in:
                                     if is_coming_vehicle:
@@ -519,29 +518,20 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                         motion_dir = "?"
                         dir_arrow  = "?"
 
-                    # ── Box Color Logic (Clean, No Messy Red Clutter) ─────────
+                    # ── Box Color Logic (Clean Cyan/Green for Outgoing) ─────────
                     # GREEN  = Counted ✓
-                    # CYAN   = Active Tracking (will count on crossing)
-                    # GREY   = Disabled direction
+                    # CYAN   = Active Outgoing/Incoming Tracking (will count)
                     if is_already_counted:
                         box_color    = (0, 255, 60)     # GREEN — counted ✓
                         status_label = "COUNTED"
-                    elif locked_dir == "going":
-                        if enable_out:
-                            box_color    = (0, 220, 255)    # CYAN — active tracking
-                            status_label = "GOING"
-                        else:
-                            box_color    = (120, 120, 120)  # GREY — disabled
-                            status_label = "GOING (OFF)"
+                    elif locked_dir == "going" or votes_g >= votes_c:
+                        box_color    = (0, 220, 255)    # CYAN — outgoing active
+                        status_label = "OUTGOING"
                     elif locked_dir == "coming":
-                        if enable_in:
-                            box_color    = (0, 220, 255)    # CYAN — active tracking
-                            status_label = "COMING"
-                        else:
-                            box_color    = (120, 120, 120)  # GREY — disabled
-                            status_label = "COMING (OFF)"
+                        box_color    = (0, 220, 255)    # CYAN — incoming active
+                        status_label = "INCOMING"
                     else:
-                        box_color    = (0, 220, 255)        # CYAN — active tracking
+                        box_color    = (0, 220, 255)    # CYAN — active tracking
                         status_label = "TRACKING"
 
                     cur_dir_mode = job.get("direction_mode", "COMING_GOING")
@@ -593,9 +583,14 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                     if enabled_lines_out is None or len(enabled_lines_out) == 0 or clean_name in enabled_lines_out or ln.name in enabled_lines_out or len(lines) == 1:
                         total_count += ln.out_count
 
-        # Memory management: purge stale track_data entries not seen in 150 frames
+        # Memory management & missed exit auditor
         if frame_idx % 60 == 0:
-            stale_keys = [k for k, v in track_data.items() if frame_idx - v.get("last_seen", frame_idx) > 150]
+            stale_keys = []
+            for k, v in track_data.items():
+                if frame_idx - v.get("last_seen", frame_idx) > 120:
+                    stale_keys.append(k)
+                    if not v.get("globally_counted", False):
+                        job["missed_uncounted"] = job.get("missed_uncounted", 0) + 1
             for k in stale_keys:
                 del track_data[k]
 

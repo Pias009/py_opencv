@@ -115,7 +115,7 @@ threading.Thread(target=prewarm_models, daemon=True).start()
 def job_worker(job_id, video_path, source_label):
     job = jobs[job_id]
     frame_sink = make_frame_sink(job)
-    vid_stride = job.get("vid_stride", 2)
+    vid_stride = job.get("vid_stride", 1)
     line_mode = job.get("line_mode", "box")
 
     day_dir = day_results_dir()
