@@ -265,10 +265,15 @@ def run_counter(video_source, job, min_width=LARGURA_MIN, min_height=ALTURA_MIN,
             tr.vx = 0.6 * new_vx + 0.4 * tr.vx
             tr.vy = 0.6 * new_vy + 0.4 * tr.vy
 
+            if getattr(tr, 'counted_globally', False):
+                tr.cx, tr.cy = cx, cy
+                tr.missed = 0
+                return
+
             for ln in lines:
                 side = ln.signed_side(cx, cy)
                 prev = tr.prev_side.get(ln.name)
-                if (prev is not None and prev * side < 0
+                if (prev is not None and prev * side <= 0
                         and ln.distance_to_segment(cx, cy) <= max(OFFSET * 4, 40)
                         and ln.name not in tr.counted_lines):
                     accepted = True
@@ -278,12 +283,14 @@ def run_counter(video_source, job, min_width=LARGURA_MIN, min_height=ALTURA_MIN,
                             accepted = True
                     if accepted:
                         tr.counted_lines.add(ln.name)
+                        tr.counted_globally = True
                         if side > prev:
                             ln.in_count += 1
                         else:
                             ln.out_count += 1
                         nonlocal carros
                         carros += 1
+                        break
                 tr.prev_side[ln.name] = side
             tr.cx, tr.cy = cx, cy
             tr.missed = 0

@@ -299,60 +299,56 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
 
                 cx, cy = get_centroid(box)
 
+                bw, bh = box[2] - box[0], box[3] - box[1]
+                box_area = max(1.0, float(bw * bh))
+                area_weight = max(0.5, (box_area ** 0.5) / 100.0)
+                vote_weight = float(conf) * area_weight
+
                 if track_id not in track_data:
                     track_data[track_id] = {
                         "history": [(cx, cy)],
                         "counted_lines": set(),
-                        "category_votes": {mapped_category: conf},
+                        "category_votes": {mapped_category: vote_weight},
                         "best_category": mapped_category,
+                        "last_seen": frame_idx,
                     }
                 else:
                     tr = track_data[track_id]
                     tr["history"].append((cx, cy))
-                    # Keep history manageable (last 30 points)
+                    tr["last_seen"] = frame_idx
                     if len(tr["history"]) > 30:
                         tr["history"].pop(0)
 
-                    # Update vote weights for classification
-                    tr["category_votes"][mapped_category] = tr["category_votes"].get(mapped_category, 0) + conf
-                    # Best category is the one with highest accumulated confidence
+                    # Update vote weights for classification (area-weighted)
+                    tr["category_votes"][mapped_category] = tr["category_votes"].get(mapped_category, 0.0) + vote_weight
                     tr["best_category"] = max(tr["category_votes"], key=tr["category_votes"].get)
 
                 tr = track_data[track_id]
                 history = tr["history"]
 
                 # ═══════════════════════════════════════════════════════════════
-                # ADVANCED MOTION-VOTE BRAIN
+                # MOTION-VOTE BRAIN  (direction labeling ONLY — NOT for counting)
                 # ─────────────────────────────────────────────────────────────
-                # Principle: accumulate directional votes over every frame.
-                # A vehicle is ONLY classified once it has:
-                #   (a) moved at least MIN_TRAVEL_PX pixels total, AND
-                #   (b) its GOING vs COMING vote score exceeds CONFIDENCE_THRESHOLD
-                #
-                # This prevents counting parked cars, jitter noise, or cars
-                # that haven't clearly established a direction yet.
+                # Votes accumulate to determine GOING vs COMING direction so that
+                # the visual overlay can show the right label and color.
+                # Actual counting is done exclusively by the raycasting system
+                # below, guarded by tr["globally_counted"] so each physical
+                # vehicle is counted at most ONCE across ALL lines.
                 # ═══════════════════════════════════════════════════════════════
-                MIN_FRAMES         = 6     # need at least N frames of history
-                MIN_TRAVEL_PX      = 18    # vehicle must have moved ≥18px total
-                CONFIDENCE_THRESH  = 0.65  # 65% of votes must agree on one direction
 
-                # ── Per-frame vote accumulation ─────────────────────────────
+                # ── Per-frame vote accumulation (direction label only) ───────
                 if len(history) >= 2:
                     dy_step = history[-1][1] - history[-2][1]
                     dx_step = history[-1][0] - history[-2][0]
                     step_disp = (dx_step**2 + dy_step**2) ** 0.5
 
                     if step_disp >= 0.5:   # ignore sub-pixel jitter
-                        # dy < 0  → moving UP → GOING  (away from camera, backside)
-                        # dy > 0  → moving DOWN → COMING (towards camera, front face)
                         if dy_step < -0.3:
                             tr["votes_going"]  = tr.get("votes_going",  0) + 1
                         elif dy_step > 0.3:
                             tr["votes_coming"] = tr.get("votes_coming", 0) + 1
 
                 # ── Entry-side bias (first seen position) ───────────────────
-                # If a vehicle first appears in the top 25% of frame → bias COMING
-                # If first appears in bottom 25% → bias GOING
                 if "entry_bias" not in tr and len(history) >= 1:
                     ey = history[0][1]
                     if ey < frame_h * 0.25:
@@ -362,69 +358,45 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                     else:
                         tr["entry_bias"] = "neutral"
 
-                # ── Classification + Counting ────────────────────────────────
-                if "counted" not in tr and len(history) >= MIN_FRAMES:
-                    # Total displacement from first to last point
+                # ── Resolve locked direction label (for display only) ────────
+                CONFIDENCE_THRESH  = 0.65
+                MIN_FRAMES_DIR     = 6
+                MIN_TRAVEL_PX_DIR  = 18
+                if "direction" not in tr and len(history) >= MIN_FRAMES_DIR:
                     dx_tot = history[-1][0] - history[0][0]
                     dy_tot = history[-1][1] - history[0][1]
                     tot_disp = (dx_tot**2 + dy_tot**2) ** 0.5
-
-                    if tot_disp >= MIN_TRAVEL_PX:
+                    if tot_disp >= MIN_TRAVEL_PX_DIR:
                         votes_g = tr.get("votes_going",  0)
                         votes_c = tr.get("votes_coming", 0)
-                        total_votes = votes_g + votes_c
-
-                        # Apply entry-side bias (+1 vote in biased direction)
                         bias = tr.get("entry_bias", "neutral")
-                        if bias == "going":
-                            votes_g += 1
-                        elif bias == "coming":
-                            votes_c += 1
+                        votes_g += (1 if bias == "going" else 0)
+                        votes_c += (1 if bias == "coming" else 0)
                         total_votes = votes_g + votes_c
-
-                        if total_votes == 0:
-                            tr["direction"] = "ambiguous"
-                        else:
-                            conf_going  = votes_g / total_votes
-                            conf_coming = votes_c / total_votes
-
-                            if conf_going >= CONFIDENCE_THRESH:
+                        if total_votes > 0:
+                            if votes_g / total_votes >= CONFIDENCE_THRESH:
                                 tr["direction"] = "going"
-                            elif conf_coming >= CONFIDENCE_THRESH:
+                            elif votes_c / total_votes >= CONFIDENCE_THRESH:
                                 tr["direction"] = "coming"
                             else:
                                 tr["direction"] = "ambiguous"
+                        else:
+                            tr["direction"] = "ambiguous"
 
-                        direction = tr.get("direction", "ambiguous")
-
-                        if direction == "ambiguous":
-                            # Not enough confidence — leave as uncounted (stays red)
-                            pass
-                        elif direction == "going":
-                            if enable_out:
-                                target_line = lines[0]
-                                target_line.out_count += 1
-                                tr["counted"] = True
-                                tr["counted_lines"].add(target_line.name)
-                                cat = tr["best_category"]
-                                categories_summary[cat] = categories_summary.get(cat, 0) + 1
-                        elif direction == "coming":
-                            if enable_in:
-                                target_line = lines[0]
-                                target_line.in_count += 1
-                                tr["counted"] = True
-                                tr["counted_lines"].add(target_line.name)
-                                cat = tr["best_category"]
-                                categories_summary[cat] = categories_summary.get(cat, 0) + 1
-
-                # Perform Zero-Fault Line Crossing Check if we have at least 2 points
-                if len(history) >= 2:
+                # ── Zero-Fault Raycasting Line Crossing (SOLE counting authority) ──
+                # Each physical vehicle is counted at most ONCE globally.
+                # tr["globally_counted"] prevents counting the same bus multiple
+                # times just because it crosses 2-4 box sides.
+                if len(history) >= 2 and not tr.get("globally_counted"):
                     p_prev = history[-2]
                     p_curr = history[-1]
 
                     disp = ((p_curr[0] - p_prev[0])**2 + (p_curr[1] - p_prev[1])**2)**0.5
                     if disp >= 1.2:
                         for ln in lines:
+                            if tr.get("globally_counted"):
+                                break   # already counted by an earlier line this frame
+
                             clean_name = ln.name.replace(" Line", "").strip()
                             # Skip line if toggled off by user
                             if enabled_lines is not None and len(enabled_lines) > 0:
@@ -441,12 +413,11 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                             chk_prev = p_prev
                             chk_curr = p_curr
 
-                            # --- Zero-Fault Self-Healing Re-Scan ---
-                            # If direct segment did not cross, but centroid is within 60px of line segment,
-                            # re-scan sub-trajectories across last 5 trajectory steps to recover missed strided crossings
+                            # --- Self-Healing Re-Scan (tightened to 30px to avoid false triggers) ---
+                            # Only re-scan sub-trajectories for genuinely missed strided crossings.
                             if not crossed and len(history) >= 2:
                                 dist = ln.distance_to_segment(p_curr[0], p_curr[1])
-                                if dist <= 60:
+                                if dist <= 30:  # was 60px — tightened to prevent phantom hits
                                     sub_pts = history[-5:]
                                     for k in range(1, len(sub_pts)):
                                         if segments_intersect(sub_pts[k-1], sub_pts[k], line_seg_A, line_seg_B):
@@ -455,31 +426,43 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                                             chk_curr = sub_pts[k]
                                             job["reanalyzed"] = job.get("reanalyzed", 0) + 1
                                             break
-                                    if not crossed:
-                                        dy_tot = history[-1][1] - history[0][1]
-                                        # If going vehicle is moving UP and within 40px of top/North line, trigger crossing
-                                        if (dy_tot < 0 or (chk_curr[1] - chk_prev[1]) < 0) and dist <= 40:
-                                            crossed = True
-                                            chk_prev = p_prev
-                                            chk_curr = p_curr
-                                            job["reanalyzed"] = job.get("reanalyzed", 0) + 1
+                                    # NOTE: The aggressive "force crossing if within 40px" fallback
+                                    # has been removed — it caused buses near the North line edge
+                                    # to be counted without actually crossing it.
 
                             if crossed:
-                                # Determine vehicle motion direction directly from its displacement trajectory
-                                dy_total = history[-1][1] - history[0][1] if len(history) >= 2 else (chk_curr[1] - chk_prev[1])
-                                sample_len = min(5, len(history))
-                                dy_recent = history[-1][1] - history[-sample_len][1] if len(history) >= sample_len else (chk_curr[1] - chk_prev[1])
+                                # Determine vehicle motion direction cleanly and mutually exclusively
+                                locked_dir = tr.get("direction")
+                                if locked_dir == "going":
+                                    is_going_vehicle = True
+                                    is_coming_vehicle = False
+                                elif locked_dir == "coming":
+                                    is_going_vehicle = False
+                                    is_coming_vehicle = True
+                                else:
+                                    sample_len = min(5, len(history))
+                                    dy_recent = history[-1][1] - history[-sample_len][1] if len(history) >= sample_len else (chk_curr[1] - chk_prev[1])
+                                    dy_total = history[-1][1] - history[0][1] if len(history) >= 2 else (chk_curr[1] - chk_prev[1])
 
-                                # dy < 0 means moving UP (away from camera, backside showing) -> GOING
-                                # dy > 0 means moving DOWN (towards camera, front face) -> COMING
-                                is_going_vehicle = (dy_recent < -0.3 or dy_total < 0)
-                                is_coming_vehicle = (dy_recent > 0.3 or dy_total > 0)
+                                    if abs(dy_recent) >= 1.0:
+                                        is_going_vehicle = (dy_recent < 0)
+                                        is_coming_vehicle = (dy_recent > 0)
+                                    elif abs(dy_total) >= 1.0:
+                                        is_going_vehicle = (dy_total < 0)
+                                        is_coming_vehicle = (dy_total > 0)
+                                    else:
+                                        dy_step = chk_curr[1] - chk_prev[1]
+                                        is_going_vehicle = (dy_step < 0)
+                                        is_coming_vehicle = (dy_step >= 0)
+
+                                if inverted_state:
+                                    is_going_vehicle, is_coming_vehicle = is_coming_vehicle, is_going_vehicle
 
                                 if enable_out and not enable_in:
-                                    if is_coming_vehicle and not is_going_vehicle:
+                                    if is_coming_vehicle:
                                         continue  # Reject coming vehicles strictly
                                 elif enable_in and not enable_out:
-                                    if is_going_vehicle and not is_coming_vehicle:
+                                    if is_going_vehicle:
                                         continue  # Reject going vehicles strictly
 
                                 clean_name = ln.name.replace(" Line", "").strip()
@@ -507,6 +490,8 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                                         ln.in_count += 1
 
                                 tr["counted_lines"].add(ln.name)
+                                # Mark globally counted so no other line increments this vehicle again
+                                tr["globally_counted"] = True
 
                                 cat = tr["best_category"]
                                 categories_summary[cat] = categories_summary.get(cat, 0) + 1
@@ -516,9 +501,9 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                                     cv2.line(frame, (ln.x1, ln.y1), (ln.x2, ln.y2), (0, 255, 0), 5)
 
                 if needs_vis:
-                    # ── Pull direction from Motion-Vote Brain ─────────────────
+                    # ── Pull direction from Motion-Vote Brain (display only) ──
                     locked_dir = tr.get("direction")      # "going" | "coming" | "ambiguous" | None
-                    is_already_counted = "counted" in tr
+                    is_already_counted = tr.get("globally_counted", False)
                     votes_g = tr.get("votes_going",  0)
                     votes_c = tr.get("votes_coming", 0)
                     tot_v   = max(1, votes_g + votes_c)
@@ -616,6 +601,12 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                 if enable_out:
                     if enabled_lines_out is None or len(enabled_lines_out) == 0 or clean_name in enabled_lines_out or ln.name in enabled_lines_out or len(lines) == 1:
                         total_count += ln.out_count
+
+        # Memory management: purge stale track_data entries not seen in 150 frames
+        if frame_idx % 60 == 0:
+            stale_keys = [k for k, v in track_data.items() if frame_idx - v.get("last_seen", frame_idx) > 150]
+            for k in stale_keys:
+                del track_data[k]
 
         if needs_vis:
             # ─── Zone Divider Line ───────────────────────────────────────────

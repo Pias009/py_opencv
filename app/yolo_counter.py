@@ -154,19 +154,23 @@ def run_counter_yolo(video_source, job, lines=None, conf_threshold=CONF_THRESHOL
 
         def cross_lines(tr, cx, cy):
             nonlocal total_count
+            if getattr(tr, 'counted_globally', False):
+                return
             for ln in lines:
                 side = ln.signed_side(cx, cy)
                 prev = tr.prev_side.get(ln.name)
-                if (prev is not None and prev * side < 0
-                        and ln.distance_to_segment(cx, cy) <= 60
+                if (prev is not None and prev * side <= 0
+                        and ln.distance_to_segment(cx, cy) <= 40
                         and ln.name not in tr.counted_lines):
                     tr.counted_lines.add(ln.name)
+                    tr.counted_globally = True
                     if side > prev:
                         ln.in_count += 1
                     else:
                         ln.out_count += 1
                     total_count += 1
                     categories[tr.category] = categories.get(tr.category, 0) + 1
+                    break
                 tr.prev_side[ln.name] = side
 
         for ti, di in matches:
