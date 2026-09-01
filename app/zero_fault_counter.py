@@ -253,13 +253,27 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
         if needs_vis:
             for i, ln in enumerate(lines):
                 clean_name = ln.name.replace(" Line", "").strip()
+                is_active_ln = True
                 if enabled_lines is not None and len(enabled_lines) > 0:
                     if clean_name not in enabled_lines and ln.name not in enabled_lines and len(lines) > 1:
-                        continue
-                color = LINE_COLORS[i % len(LINE_COLORS)]
-                cv2.line(frame, (ln.x1, ln.y1), (ln.x2, ln.y2), color, 3)
-                cv2.putText(frame, ln.name, (ln.x1 + 6, ln.y1 - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                        is_active_ln = False
+
+                if is_active_ln:
+                    # Active counting line → bright green, thick
+                    ln_color = (0, 255, 60)
+                    ln_thick = 4
+                    cv2.line(frame, (ln.x1, ln.y1), (ln.x2, ln.y2), ln_color, ln_thick)
+                    # Glow effect: draw slightly transparent wider line underneath
+                    cv2.line(frame, (ln.x1, ln.y1), (ln.x2, ln.y2), (0, 180, 40), 8)
+                    cv2.line(frame, (ln.x1, ln.y1), (ln.x2, ln.y2), ln_color, ln_thick)
+                    count_txt = f"{ln.name}  OUT:{ln.out_count}  IN:{ln.in_count}"
+                    cv2.putText(frame, count_txt, (ln.x1 + 6, ln.y1 - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.62, ln_color, 2)
+                else:
+                    # Inactive line → dim gray
+                    cv2.line(frame, (ln.x1, ln.y1), (ln.x2, ln.y2), (90, 90, 90), 2)
+                    cv2.putText(frame, f"{ln.name} (OFF)", (ln.x1 + 6, ln.y1 - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.50, (90, 90, 90), 1)
 
         # Process detections with persistent track IDs
         if result.boxes is not None and result.boxes.id is not None:
@@ -307,30 +321,101 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                 tr = track_data[track_id]
                 history = tr["history"]
 
-                # --- Trajectory Motion Counting (Every Going/Coming vehicle tracked in scene) ---
-                if len(history) >= 2 and "motion_counted" not in tr:
-                    dy_tot = history[-1][1] - history[0][1]
-                    tot_disp = ((history[-1][0] - history[0][0])**2 + dy_tot**2)**0.5
-                    if tot_disp >= 5.0:
-                        is_going_veh = (dy_tot <= 0.2)
-                        if enable_out and not enable_in:
-                            is_going_veh = True
-                        elif enable_in and not enable_out:
-                            is_going_veh = False
+                # ═══════════════════════════════════════════════════════════════
+                # ADVANCED MOTION-VOTE BRAIN
+                # ─────────────────────────────────────────────────────────────
+                # Principle: accumulate directional votes over every frame.
+                # A vehicle is ONLY classified once it has:
+                #   (a) moved at least MIN_TRAVEL_PX pixels total, AND
+                #   (b) its GOING vs COMING vote score exceeds CONFIDENCE_THRESHOLD
+                #
+                # This prevents counting parked cars, jitter noise, or cars
+                # that haven't clearly established a direction yet.
+                # ═══════════════════════════════════════════════════════════════
+                MIN_FRAMES         = 6     # need at least N frames of history
+                MIN_TRAVEL_PX      = 18    # vehicle must have moved ≥18px total
+                CONFIDENCE_THRESH  = 0.65  # 65% of votes must agree on one direction
 
-                        target_line = lines[0]
-                        if is_going_veh and enable_out:
-                            target_line.out_count += 1
-                            tr["motion_counted"] = True
-                            tr["counted_lines"].add(target_line.name)
-                            cat = tr["best_category"]
-                            categories_summary[cat] = categories_summary.get(cat, 0) + 1
-                        elif not is_going_veh and enable_in:
-                            target_line.in_count += 1
-                            tr["motion_counted"] = True
-                            tr["counted_lines"].add(target_line.name)
-                            cat = tr["best_category"]
-                            categories_summary[cat] = categories_summary.get(cat, 0) + 1
+                # ── Per-frame vote accumulation ─────────────────────────────
+                if len(history) >= 2:
+                    dy_step = history[-1][1] - history[-2][1]
+                    dx_step = history[-1][0] - history[-2][0]
+                    step_disp = (dx_step**2 + dy_step**2) ** 0.5
+
+                    if step_disp >= 0.5:   # ignore sub-pixel jitter
+                        # dy < 0  → moving UP → GOING  (away from camera, backside)
+                        # dy > 0  → moving DOWN → COMING (towards camera, front face)
+                        if dy_step < -0.3:
+                            tr["votes_going"]  = tr.get("votes_going",  0) + 1
+                        elif dy_step > 0.3:
+                            tr["votes_coming"] = tr.get("votes_coming", 0) + 1
+
+                # ── Entry-side bias (first seen position) ───────────────────
+                # If a vehicle first appears in the top 25% of frame → bias COMING
+                # If first appears in bottom 25% → bias GOING
+                if "entry_bias" not in tr and len(history) >= 1:
+                    ey = history[0][1]
+                    if ey < frame_h * 0.25:
+                        tr["entry_bias"] = "coming"
+                    elif ey > frame_h * 0.75:
+                        tr["entry_bias"] = "going"
+                    else:
+                        tr["entry_bias"] = "neutral"
+
+                # ── Classification + Counting ────────────────────────────────
+                if "counted" not in tr and len(history) >= MIN_FRAMES:
+                    # Total displacement from first to last point
+                    dx_tot = history[-1][0] - history[0][0]
+                    dy_tot = history[-1][1] - history[0][1]
+                    tot_disp = (dx_tot**2 + dy_tot**2) ** 0.5
+
+                    if tot_disp >= MIN_TRAVEL_PX:
+                        votes_g = tr.get("votes_going",  0)
+                        votes_c = tr.get("votes_coming", 0)
+                        total_votes = votes_g + votes_c
+
+                        # Apply entry-side bias (+1 vote in biased direction)
+                        bias = tr.get("entry_bias", "neutral")
+                        if bias == "going":
+                            votes_g += 1
+                        elif bias == "coming":
+                            votes_c += 1
+                        total_votes = votes_g + votes_c
+
+                        if total_votes == 0:
+                            tr["direction"] = "ambiguous"
+                        else:
+                            conf_going  = votes_g / total_votes
+                            conf_coming = votes_c / total_votes
+
+                            if conf_going >= CONFIDENCE_THRESH:
+                                tr["direction"] = "going"
+                            elif conf_coming >= CONFIDENCE_THRESH:
+                                tr["direction"] = "coming"
+                            else:
+                                tr["direction"] = "ambiguous"
+
+                        direction = tr.get("direction", "ambiguous")
+
+                        if direction == "ambiguous":
+                            # Not enough confidence — leave as uncounted (stays red)
+                            pass
+                        elif direction == "going":
+                            if enable_out:
+                                target_line = lines[0]
+                                target_line.out_count += 1
+                                tr["counted"] = True
+                                tr["counted_lines"].add(target_line.name)
+                                cat = tr["best_category"]
+                                categories_summary[cat] = categories_summary.get(cat, 0) + 1
+                        elif direction == "coming":
+                            if enable_in:
+                                target_line = lines[0]
+                                target_line.in_count += 1
+                                tr["counted"] = True
+                                tr["counted_lines"].add(target_line.name)
+                                cat = tr["best_category"]
+                                categories_summary[cat] = categories_summary.get(cat, 0) + 1
 
                 # Perform Zero-Fault Line Crossing Check if we have at least 2 points
                 if len(history) >= 2:
@@ -385,14 +470,17 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                                 sample_len = min(5, len(history))
                                 dy_recent = history[-1][1] - history[-sample_len][1] if len(history) >= sample_len else (chk_curr[1] - chk_prev[1])
 
-                                # dy <= 0 means moving UP (away from camera, backside showing) -> GOING
-                                is_going_vehicle = (dy_recent <= 0.1 or dy_total <= 0.1)
+                                # dy < 0 means moving UP (away from camera, backside showing) -> GOING
+                                # dy > 0 means moving DOWN (towards camera, front face) -> COMING
+                                is_going_vehicle = (dy_recent < -0.3 or dy_total < 0)
+                                is_coming_vehicle = (dy_recent > 0.3 or dy_total > 0)
 
-                                # Mode override: If user selected GOING ONLY mode, guarantee all crossings count as GOING
                                 if enable_out and not enable_in:
-                                    is_going_vehicle = True
+                                    if is_coming_vehicle and not is_going_vehicle:
+                                        continue  # Reject coming vehicles strictly
                                 elif enable_in and not enable_out:
-                                    is_going_vehicle = False
+                                    if is_going_vehicle and not is_coming_vehicle:
+                                        continue  # Reject going vehicles strictly
 
                                 clean_name = ln.name.replace(" Line", "").strip()
 
@@ -428,67 +516,92 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                                     cv2.line(frame, (ln.x1, ln.y1), (ln.x2, ln.y2), (0, 255, 0), 5)
 
                 if needs_vis:
-                    # Front/Facing vs Tail/Receding Motion Classifier
-                    # dy > 0 -> Vehicle moving down towards camera (Facing Front / COMING)
-                    # dy < 0 -> Vehicle moving up away from camera (Tail/Back / GOING)
-                    motion_dir = "COMING"
-                    dir_arrow = "v"
+                    # ── Pull direction from Motion-Vote Brain ─────────────────
+                    locked_dir = tr.get("direction")      # "going" | "coming" | "ambiguous" | None
+                    is_already_counted = "counted" in tr
+                    votes_g = tr.get("votes_going",  0)
+                    votes_c = tr.get("votes_coming", 0)
+                    tot_v   = max(1, votes_g + votes_c)
+                    conf_pct = int(max(votes_g, votes_c) / tot_v * 100)
 
-                    if len(history) >= 2:
-                        dy_total = history[-1][1] - history[0][1]
-                        sample_len = min(5, len(history))
-                        dy_recent = history[-1][1] - history[-sample_len][1]
-
-                        # If vehicle is moving UP (y decreasing), it is GOING (receding, showing backside)
-                        if dy_recent < 0 or dy_total < 0:
-                            motion_dir = "GOING"
-                            dir_arrow = "^"
-                        else:
-                            motion_dir = "COMING"
-                            dir_arrow = "v"
-
-                    # Determine if vehicle is COUNTED or MATCHES active count rules (GREEN = Counting, RED = Not Counting)
-                    is_already_counted = len(tr["counted_lines"]) > 0
-                    if count_scope_mode == "all_road":
-                        is_counting_active = True
+                    # Direction from accumulated votes (for arrow display)
+                    if locked_dir == "going":
+                        motion_dir = "GOING"
+                        dir_arrow  = "^"
+                    elif locked_dir == "coming":
+                        motion_dir = "COMING"
+                        dir_arrow  = "v"
+                    elif votes_g > votes_c:
+                        motion_dir = "GOING?"     # not yet confirmed
+                        dir_arrow  = "^"
+                    elif votes_c > votes_g:
+                        motion_dir = "COMING?"    # not yet confirmed
+                        dir_arrow  = "v"
                     else:
-                        if motion_dir == "GOING":
-                            is_counting_active = enable_out
-                        else:
-                            is_counting_active = enable_in
+                        motion_dir = "?"
+                        dir_arrow  = "?"
 
-                    if is_already_counted or is_counting_active:
-                        box_color = (0, 255, 0)   # BRIGHT GREEN for Counting / Active vehicle
-                        status_label = "COUNTING" if not is_already_counted else "COUNTED"
-                    else:
-                        box_color = (0, 0, 255)   # BRIGHT RED for Not Counting / Filtered Out vehicle
+                    # ── Box Color Logic ───────────────────────────────────────
+                    # GREEN        = counted (direction confirmed + counted)
+                    # CYAN         = direction confirmed, waiting to count
+                    # YELLOW       = direction building (votes accumulating)
+                    # RED (bright) = ambiguous / not counting / wrong direction
+                    if is_already_counted:
+                        box_color    = (0, 255, 60)     # GREEN — counted ✓
+                        status_label = "COUNTED"
+                    elif locked_dir == "going" and enable_out:
+                        box_color    = (0, 200, 255)    # CYAN — confirmed going, will count
+                        status_label = "GOING-ACTIVE"
+                    elif locked_dir == "coming" and enable_in:
+                        box_color    = (0, 200, 255)    # CYAN — confirmed coming, will count
+                        status_label = "COMING-ACTIVE"
+                    elif locked_dir == "ambiguous":
+                        box_color    = (0, 0, 255)      # RED — direction ambiguous
+                        status_label = "AMBIGUOUS"
+                    elif (locked_dir == "going" and not enable_out) or (locked_dir == "coming" and not enable_in):
+                        box_color    = (0, 0, 255)      # RED — direction confirmed but disabled
                         status_label = "NOT COUNTING"
+                    elif votes_g + votes_c >= 2:
+                        box_color    = (0, 180, 255)    # ORANGE/AMBER — still gathering votes
+                        status_label = f"TRACKING {conf_pct}%"
+                    else:
+                        box_color    = (0, 0, 255)      # RED — just appeared, no data yet
+                        status_label = "NEW"
 
                     cur_dir_mode = job.get("direction_mode", "COMING_GOING")
-                    if cur_dir_mode == "COMING_GOING":
-                        tag = f"[{motion_dir} | {status_label}]"
-                    elif cur_dir_mode == "FORWARD_BACKWARD":
-                        tag = f"[{'FORWARD' if motion_dir == 'COMING' else 'BACKWARD'} | {status_label}]"
+                    if cur_dir_mode == "FORWARD_BACKWARD":
+                        disp_dir = "FORWARD" if motion_dir in ("GOING", "GOING?") else "BACKWARD"
+                    elif cur_dir_mode == "IN_OUT":
+                        disp_dir = "OUT" if motion_dir in ("GOING", "GOING?") else "IN"
                     else:
-                        tag = f"[{'IN' if motion_dir == 'COMING' else 'OUT'} | {status_label}]"
+                        disp_dir = motion_dir
+
+                    tag = f"[{disp_dir} | {status_label}]"
 
                     x1, y1, x2, y2 = (int(v) for v in box)
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
 
-                    label = f"#{track_id} {tr['best_category']} {tag} ({conf:.2f})"
-                    cv2.putText(frame, label, (x1, max(15, y1 - 8)),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.48, box_color, 2)
+                    # Thick red border for non-counting to stand out clearly
+                    border_thick = 3 if box_color == (0, 0, 255) else 2
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, border_thick)
 
-                    # Draw direction arrow indicator
-                    center_pt = (int((x1 + x2) / 2), int((y1 + y2) / 2))
-                    cv2.putText(frame, dir_arrow, center_pt, cv2.FONT_HERSHEY_SIMPLEX, 0.7, box_color, 2)
+                    # Dark background behind label
+                    lbl = f"#{track_id} {tr['best_category']} {tag}"
+                    (lw, lh), _ = cv2.getTextSize(lbl, cv2.FONT_HERSHEY_SIMPLEX, 0.46, 2)
+                    cv2.rectangle(frame, (x1, max(0, y1 - lh - 10)), (x1 + lw + 4, y1), (0, 0, 0), -1)
+                    cv2.putText(frame, lbl, (x1 + 2, max(12, y1 - 4)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.46, box_color, 2)
 
-                    # Draw movement trail
-                    trail_color = (0, 255, 0) if (is_already_counted or is_counting_active) else (0, 0, 255)
+                    # Direction arrow at box centre
+                    cx_arr = int((x1 + x2) / 2)
+                    cy_arr = int((y1 + y2) / 2)
+                    cv2.putText(frame, dir_arrow, (cx_arr, cy_arr),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.9, box_color, 2)
+
+                    # Movement trail — same color as box
                     for j in range(1, len(history)):
                         pt1 = (int(history[j-1][0]), int(history[j-1][1]))
-                        pt2 = (int(history[j][0]), int(history[j][1]))
-                        cv2.line(frame, pt1, pt2, trail_color, 2)
+                        pt2 = (int(history[j][0]),   int(history[j][1]))
+                        cv2.line(frame, pt1, pt2, box_color, 2)
 
         # Compute total_count dynamically based ONLY on active enabled rules
         total_count = 0
@@ -505,17 +618,53 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                         total_count += ln.out_count
 
         if needs_vis:
-            # Draw status overlay
-            overlay_lines = [("TOTAL ACTIVE VEHICLES (0-Fault): " + str(total_count), (0, 255, 0), 1.0, 3)]
-            for i, ln in enumerate(lines):
-                color = LINE_COLORS[i % len(LINE_COLORS)]
-                overlay_lines.append((f"{ln.name}  in:{ln.in_count} out:{ln.out_count}", color, 0.65, 2))
+            # ─── Zone Divider Line ───────────────────────────────────────────
+            # Horizontal mid-line divides GOING (top) from COMING (bottom) zones
+            mid_y = frame_h // 2
+            divider_color_going  = (0, 230, 80)    # bright green  → GOING zone top
+            divider_color_coming = (60, 120, 255)  # bright blue   → COMING zone bottom
 
-            line_height = 32
-            y = frame_h - 20 - line_height * (len(overlay_lines) - 1)
+            # Solid thick divider
+            cv2.line(frame, (0, mid_y), (frame_w, mid_y), (255, 255, 255), 1)
+            # Left bracket ticks
+            cv2.line(frame, (0, 0),      (0, mid_y),      divider_color_going,  3)
+            cv2.line(frame, (0, mid_y),  (0, frame_h),    divider_color_coming, 3)
+            # Right bracket ticks
+            cv2.line(frame, (frame_w - 3, 0),     (frame_w - 3, mid_y),   divider_color_going,  3)
+            cv2.line(frame, (frame_w - 3, mid_y), (frame_w - 3, frame_h), divider_color_coming, 3)
+
+            # GOING zone label (top-right, green)
+            going_active  = enable_out
+            coming_active = enable_in
+
+            going_label  = "GOING ZONE (COUNTING)" if going_active  else "GOING ZONE (OFF)"
+            coming_label = "COMING ZONE (COUNTING)" if coming_active else "COMING ZONE (OFF)"
+
+            cv2.rectangle(frame, (frame_w - 320, 8),  (frame_w - 2, 38),      (0, 0, 0), -1)
+            cv2.putText(frame, going_label,  (frame_w - 314, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.62, divider_color_going,  2)
+
+            cv2.rectangle(frame, (frame_w - 340, mid_y + 8), (frame_w - 2, mid_y + 38), (0, 0, 0), -1)
+            cv2.putText(frame, coming_label, (frame_w - 334, mid_y + 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.62, divider_color_coming, 2)
+
+            # ─── Stats Overlay (bottom-left) ────────────────────────────────
+            overlay_lines = [
+                (f"TOTAL COUNTED: {total_count}", (0, 255, 80), 0.90, 2),
+            ]
+            for i, ln in enumerate(lines):
+                out_lbl = f"  {ln.name}  OUT(GOING):{ln.out_count}"
+                in_lbl  = f"  {ln.name}  IN(COMING):{ln.in_count}"
+                overlay_lines.append((out_lbl, divider_color_going,  0.58, 2))
+                overlay_lines.append((in_lbl,  divider_color_coming, 0.58, 2))
+
+            line_height = 26
+            y_start = frame_h - 14 - line_height * (len(overlay_lines) - 1)
             for text, color, scale, thickness in overlay_lines:
-                cv2.putText(frame, text, (15, y), cv2.FONT_HERSHEY_SIMPLEX, scale, color, thickness)
-                y += line_height
+                bg_tw, bg_th = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, thickness)[0]
+                cv2.rectangle(frame, (10, y_start - bg_th - 3), (14 + bg_tw, y_start + 4), (0, 0, 0), -1)
+                cv2.putText(frame, text, (12, y_start), cv2.FONT_HERSHEY_SIMPLEX, scale, color, thickness)
+                y_start += line_height
 
         job["frame_idx"] = frame_idx
         job["count"] = total_count
