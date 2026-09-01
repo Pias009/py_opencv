@@ -148,7 +148,7 @@ def job_worker(job_id, video_path, source_label):
 
         from zero_fault_counter import run_zero_fault_counter
         run_zero_fault_counter(video_path, job, lines=lines, model_key="bnvd",
-                               conf_threshold=0.45, imgsz=640, vid_stride=vid_stride,
+                               conf_threshold=0.25, imgsz=640, vid_stride=vid_stride,
                                frame_sink=frame_sink)
     except Exception as e:
         job["status"] = "error"
