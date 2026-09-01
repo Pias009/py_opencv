@@ -358,11 +358,10 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                     else:
                         tr["entry_bias"] = "neutral"
 
-                # ── Resolve locked direction label (for display only) ────────
-                CONFIDENCE_THRESH  = 0.65
-                MIN_FRAMES_DIR     = 6
-                MIN_TRAVEL_PX_DIR  = 18
-                if "direction" not in tr and len(history) >= MIN_FRAMES_DIR:
+                # ── Resolve direction label (instant tracking for cars/rickshaws) ──
+                MIN_FRAMES_DIR     = 2
+                MIN_TRAVEL_PX_DIR  = 3.0
+                if len(history) >= MIN_FRAMES_DIR:
                     dx_tot = history[-1][0] - history[0][0]
                     dy_tot = history[-1][1] - history[0][1]
                     tot_disp = (dx_tot**2 + dy_tot**2) ** 0.5
@@ -372,16 +371,10 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                         bias = tr.get("entry_bias", "neutral")
                         votes_g += (1 if bias == "going" else 0)
                         votes_c += (1 if bias == "coming" else 0)
-                        total_votes = votes_g + votes_c
-                        if total_votes > 0:
-                            if votes_g / total_votes >= CONFIDENCE_THRESH:
-                                tr["direction"] = "going"
-                            elif votes_c / total_votes >= CONFIDENCE_THRESH:
-                                tr["direction"] = "coming"
-                            else:
-                                tr["direction"] = "ambiguous"
+                        if votes_g >= votes_c:
+                            tr["direction"] = "going"
                         else:
-                            tr["direction"] = "ambiguous"
+                            tr["direction"] = "coming"
 
                 # ── Zero-Fault Raycasting Line Crossing (SOLE counting authority) ──
                 # Each physical vehicle is counted at most ONCE globally.
@@ -526,32 +519,30 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                         motion_dir = "?"
                         dir_arrow  = "?"
 
-                    # ── Box Color Logic ───────────────────────────────────────
-                    # GREEN        = counted (direction confirmed + counted)
-                    # CYAN         = direction confirmed, waiting to count
-                    # YELLOW       = direction building (votes accumulating)
-                    # RED (bright) = ambiguous / not counting / wrong direction
+                    # ── Box Color Logic (Clean, No Messy Red Clutter) ─────────
+                    # GREEN  = Counted ✓
+                    # CYAN   = Active Tracking (will count on crossing)
+                    # GREY   = Disabled direction
                     if is_already_counted:
                         box_color    = (0, 255, 60)     # GREEN — counted ✓
                         status_label = "COUNTED"
-                    elif locked_dir == "going" and enable_out:
-                        box_color    = (0, 200, 255)    # CYAN — confirmed going, will count
-                        status_label = "GOING-ACTIVE"
-                    elif locked_dir == "coming" and enable_in:
-                        box_color    = (0, 200, 255)    # CYAN — confirmed coming, will count
-                        status_label = "COMING-ACTIVE"
-                    elif locked_dir == "ambiguous":
-                        box_color    = (0, 0, 255)      # RED — direction ambiguous
-                        status_label = "AMBIGUOUS"
-                    elif (locked_dir == "going" and not enable_out) or (locked_dir == "coming" and not enable_in):
-                        box_color    = (0, 0, 255)      # RED — direction confirmed but disabled
-                        status_label = "NOT COUNTING"
-                    elif votes_g + votes_c >= 2:
-                        box_color    = (0, 180, 255)    # ORANGE/AMBER — still gathering votes
-                        status_label = f"TRACKING {conf_pct}%"
+                    elif locked_dir == "going":
+                        if enable_out:
+                            box_color    = (0, 220, 255)    # CYAN — active tracking
+                            status_label = "GOING"
+                        else:
+                            box_color    = (120, 120, 120)  # GREY — disabled
+                            status_label = "GOING (OFF)"
+                    elif locked_dir == "coming":
+                        if enable_in:
+                            box_color    = (0, 220, 255)    # CYAN — active tracking
+                            status_label = "COMING"
+                        else:
+                            box_color    = (120, 120, 120)  # GREY — disabled
+                            status_label = "COMING (OFF)"
                     else:
-                        box_color    = (0, 0, 255)      # RED — just appeared, no data yet
-                        status_label = "NEW"
+                        box_color    = (0, 220, 255)        # CYAN — active tracking
+                        status_label = "TRACKING"
 
                     cur_dir_mode = job.get("direction_mode", "COMING_GOING")
                     if cur_dir_mode == "FORWARD_BACKWARD":
