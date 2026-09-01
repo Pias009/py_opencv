@@ -194,6 +194,7 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
     # Track histories: track_id -> dict of properties
     # properties: {"history": [(x, y)], "counted_lines": set(), "category_votes": {}, "best_category": str}
     track_data = {}
+    recent_counted_vehicles = []  # [(category, cx, cy, frame_idx)] for track de-duplication
     total_count = 0
     categories_summary = {}
 
@@ -422,39 +423,56 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
 
                     # Zone Corridor Pass-Through Check (Outgoing vehicles counted, incoming strictly rejected):
                     tot_travel = ((p_curr[0] - history[0][0])**2 + (p_curr[1] - history[0][1])**2)**0.5
-                    if tot_travel >= 3.0 or disp >= 0.5:
+                    if tot_travel >= 12.0 and len(history) >= 4:
                         # STRICT DIRECTION GATE:
                         if (not enable_in) and is_coming_vehicle:
                             pass  # Strictly REJECT incoming vehicles on right lane
                         elif (not enable_out) and is_going_vehicle:
                             pass  # Strictly REJECT outgoing vehicles
                         else:
-                            # Pick primary counting line (default North line for going, South for coming)
-                            target_line = lines[0]
-                            for ln in lines:
-                                if is_going_vehicle and "north" in ln.name.lower():
-                                    target_line = ln
-                                    break
-                                elif is_coming_vehicle and "south" in ln.name.lower():
-                                    target_line = ln
-                                    break
-
-                            clean_name = target_line.name.replace(" Line", "").strip()
-
-                            if is_going_vehicle:
-                                target_line.out_count += 1
-                            else:
-                                target_line.in_count += 1
-
-                            tr["counted_lines"].add(target_line.name)
-                            # Mark globally counted so each vehicle is counted EXACTLY ONCE
-                            tr["globally_counted"] = True
-
                             cat = tr["best_category"]
-                            categories_summary[cat] = categories_summary.get(cat, 0) + 1
 
-                            if needs_vis:
-                                cv2.line(frame, (target_line.x1, target_line.y1), (target_line.x2, target_line.y2), (0, 255, 0), 5)
+                            # --- Spatial/Temporal Re-Identification De-Duplication ---
+                            # Prevent ByteTrack ID flickering from double-counting the same physical bus
+                            is_duplicate = False
+                            for r_cat, r_x, r_y, r_f in recent_counted_vehicles:
+                                if r_cat == cat and (frame_idx - r_f) <= 60:
+                                    dist_recent = ((cx - r_x)**2 + (cy - r_y)**2)**0.5
+                                    if dist_recent <= 120.0:
+                                        is_duplicate = True
+                                        break
+
+                            if is_duplicate:
+                                tr["globally_counted"] = True  # Inherit counted state, skip incrementing
+                            else:
+                                # Pick primary counting line (default North line for going, South for coming)
+                                target_line = lines[0]
+                                for ln in lines:
+                                    if is_going_vehicle and "north" in ln.name.lower():
+                                        target_line = ln
+                                        break
+                                    elif is_coming_vehicle and "south" in ln.name.lower():
+                                        target_line = ln
+                                        break
+
+                                clean_name = target_line.name.replace(" Line", "").strip()
+
+                                if is_going_vehicle:
+                                    target_line.out_count += 1
+                                else:
+                                    target_line.in_count += 1
+
+                                tr["counted_lines"].add(target_line.name)
+                                # Mark globally counted so each vehicle is counted EXACTLY ONCE
+                                tr["globally_counted"] = True
+                                recent_counted_vehicles.append((cat, cx, cy, frame_idx))
+                                if len(recent_counted_vehicles) > 100:
+                                    recent_counted_vehicles.pop(0)
+
+                                categories_summary[cat] = categories_summary.get(cat, 0) + 1
+
+                                if needs_vis:
+                                    cv2.line(frame, (target_line.x1, target_line.y1), (target_line.x2, target_line.y2), (0, 255, 0), 5)
 
                 if needs_vis:
                     # ── Direction labeling and Box Color Engine ──
