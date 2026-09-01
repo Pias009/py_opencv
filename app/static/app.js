@@ -133,40 +133,7 @@ function updateSidebarRules() {
   const badgeIn = document.getElementById("badge-in");
   const badgeOut = document.getElementById("badge-out");
 
-  const directionModeSelect = document.getElementById("direction-mode-select");
-  const directionMode = directionModeSelect ? directionModeSelect.value : "COMING_GOING";
-
-  let namingStr = "COMING / GOING";
-  let flow1Title = "🚘 Coming Flow (Front / Facing Camera)";
-  let flow1Sub = "Count vehicles moving forward showing front face towards camera";
-  let flow2Title = "🚗 Going Flow (Back / Receding Camera)";
-  let flow2Sub = "Count vehicles moving backward seeing tail / back away from camera";
-
-  if (directionMode === "FORWARD_BACKWARD") {
-    namingStr = "FORWARD / BACKWARD";
-    flow1Title = "⬆️ Forward Direction Flow";
-    flow1Sub = "Count vehicles moving in forward traffic lanes";
-    flow2Title = "⬇️ Backward Direction Flow";
-    flow2Sub = "Count vehicles moving in backward / reverse traffic lanes";
-  } else if (directionMode === "IN_OUT") {
-    namingStr = "IN / OUT";
-    flow1Title = "🟢 IN Flow (Incoming Boundary)";
-    flow1Sub = "Count vehicles entering boundary zone";
-    flow2Title = "🔴 OUT Flow (Outgoing Boundary)";
-    flow2Sub = "Count vehicles exiting boundary zone";
-  }
-
-  const flow1TitleEl = document.getElementById("flow1-title");
-  const flow1SubEl = document.getElementById("flow1-sub");
-  const flow2TitleEl = document.getElementById("flow2-title");
-  const flow2SubEl = document.getElementById("flow2-sub");
-
-  if (flow1TitleEl) flow1TitleEl.textContent = flow1Title;
-  if (flow1SubEl) flow1SubEl.textContent = flow1Sub;
-  if (flow2TitleEl) flow2TitleEl.textContent = flow2Title;
-  if (flow2SubEl) flow2SubEl.textContent = flow2Sub;
-
-  if (sideNaming) sideNaming.textContent = namingStr;
+  if (sideNaming) sideNaming.textContent = "COMING / GOING";
 
   const inChecked = document.querySelectorAll(".line-in-check:checked").length;
   const outChecked = document.querySelectorAll(".line-out-check:checked").length;
@@ -196,12 +163,10 @@ async function pushLiveRuleUpdate() {
   const toggleIn = document.getElementById("toggle-in");
   const toggleOut = document.getElementById("toggle-out");
   const countScopeRadio = document.querySelector('input[name="count_scope_mode"]:checked');
-  const directionModeSelect = document.getElementById("direction-mode-select");
 
   const enableIn = toggleIn ? toggleIn.checked : true;
   const enableOut = toggleOut ? toggleOut.checked : true;
   const countScopeMode = countScopeRadio ? countScopeRadio.value : "active_only";
-  const directionMode = directionModeSelect ? directionModeSelect.value : "COMING_GOING";
 
   const enabledLinesIn = Array.from(document.querySelectorAll(".line-in-check:checked")).map(c => c.value);
   const enabledLinesOut = Array.from(document.querySelectorAll(".line-out-check:checked")).map(c => c.value);
@@ -212,7 +177,7 @@ async function pushLiveRuleUpdate() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        direction_mode: directionMode,
+        direction_mode: "COMING_GOING",
         enable_in: enableIn,
         enable_out: enableOut,
         count_scope_mode: countScopeMode,
@@ -311,7 +276,6 @@ async function startJob() {
 
   const speedSelect = document.getElementById("speed-select");
   const lineModeSelect = document.getElementById("line-mode-select");
-  const directionModeSelect = document.getElementById("direction-mode-select");
 
   const toggleIn = document.getElementById("toggle-in");
   const toggleOut = document.getElementById("toggle-out");
@@ -321,7 +285,6 @@ async function startJob() {
 
   const speed = speedSelect ? speedSelect.value : "2";
   const lineMode = lineModeSelect ? lineModeSelect.value : "box";
-  const directionMode = directionModeSelect ? directionModeSelect.value : "COMING_GOING";
   const enableIn = toggleIn ? toggleIn.checked : true;
   const enableOut = toggleOut ? toggleOut.checked : true;
 
@@ -343,7 +306,7 @@ async function startJob() {
     startFormData.append("filename", file.name);
     startFormData.append("speed", speed);
     startFormData.append("line_mode", lineMode);
-    startFormData.append("direction_mode", directionMode);
+    startFormData.append("direction_mode", "COMING_GOING");
     startFormData.append("enable_in", enableIn);
     startFormData.append("enable_out", enableOut);
     startFormData.append("count_scope_mode", countScopeMode);

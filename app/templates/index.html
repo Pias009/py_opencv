@@ -88,7 +88,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
           <input id="file-input" type="file" accept=".mp4,.avi,.mov,.mkv,.webm" hidden>
         </div>
       </div>
-      <div class="field-row" style="margin-top: 14px; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;">
+      <div class="field-row" style="margin-top: 14px; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px;">
         <div class="field">
           <div style="display: flex; align-items: center; justify-content: space-between;">
             <label for="line-mode-select">Auto Lane / Boundary Mode</label>
@@ -99,17 +99,6 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
             <option value="box">🎯 4-Way Intersection Box (Auto Centered)</option>
             <option value="horizontal">➖ Single Horizontal Boundary Line</option>
             <option value="vertical">Vertical Boundary Line</option>
-          </select>
-        </div>
-        <div class="field">
-          <div style="display: flex; align-items: center; justify-content: space-between;">
-            <label for="direction-mode-select">Traffic Naming &amp; Direction Mode</label>
-            <button type="button" class="info-trigger" data-ref="direction" title="View Direction Modes">ℹ️</button>
-          </div>
-          <select id="direction-mode-select" class="speed-select">
-            <option value="COMING_GOING" selected>🚘 Coming Forward (Face) vs Going Backward (Tail)</option>
-            <option value="FORWARD_BACKWARD">⬆️ Forward Direction vs ⬇️ Backward Direction</option>
-            <option value="IN_OUT">🟢 IN (Entering) vs 🔴 OUT (Exiting)</option>
           </select>
         </div>
         <div class="field">
