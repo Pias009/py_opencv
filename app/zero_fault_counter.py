@@ -450,6 +450,7 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                                     crossed = True
                                     job["reanalyzed"] = job.get("reanalyzed", 0) + 1
 
+                            if crossed:
                                 if enable_out and not enable_in:
                                     if is_coming_vehicle:
                                         continue  # Reject coming vehicles strictly

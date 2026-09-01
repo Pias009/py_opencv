@@ -77,7 +77,7 @@ def vertical_line(frame_w, frame_h, pct=0.5):
     return [CountingLine("Line1", x, 25, x, frame_h - 25)]
 
 
-def box_lines(frame_w, frame_h, margin=40, scale=0.65):
+def box_lines(frame_w, frame_h, margin=15, scale=0.88):
     """Four lines forming a small boundary box centered in the frame (North/South/
     West/East), sized at `scale` fraction of the frame's width/height, so all four
     approaches of an intersection cross it cleanly instead of chasing the far frame
