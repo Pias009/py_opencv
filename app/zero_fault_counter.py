@@ -523,13 +523,13 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                         box_color    = (0, 255, 60)     # GREEN — counted ✓
                         status_label = "COUNTED"
                     elif locked_dir == "going" or votes_g >= votes_c:
-                        box_color    = (0, 220, 255)    # CYAN — outgoing active
+                        box_color    = (255, 220, 0)    # CYAN — outgoing active
                         status_label = "OUTGOING"
                     elif locked_dir == "coming":
-                        box_color    = (0, 220, 255)    # CYAN — incoming active
+                        box_color    = (255, 220, 0)    # CYAN — incoming active
                         status_label = "INCOMING"
                     else:
-                        box_color    = (0, 220, 255)    # CYAN — active tracking
+                        box_color    = (255, 220, 0)    # CYAN — active tracking
                         status_label = "TRACKING"
 
                     cur_dir_mode = job.get("direction_mode", "COMING_GOING")
