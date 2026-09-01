@@ -377,33 +377,43 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                 # ── Zero-Fault Zone Corridor Traversal (NO thin-line touching required) ──
                 # Vehicles passing through the road corridor are counted automatically based on
                 # motion trajectory, eliminating height-dependent line-touching misses for Cars/SUVs.
+                # ── Zero-Fault Zone Corridor Traversal (Spatial + Motion Direction Lock) ──
                 if len(history) >= 2 and not tr.get("globally_counted"):
                     p_prev = history[-2]
                     p_curr = history[-1]
 
-                    # Determine vehicle motion direction cleanly
-                    locked_dir = tr.get("direction")
-                    if locked_dir == "going":
-                        is_going_vehicle = True
-                        is_coming_vehicle = False
-                    elif locked_dir == "coming":
+                    cx, cy = p_curr[0], p_curr[1]
+
+                    # Robust Spatial + Velocity Direction Determination:
+                    # Left side of road (X < 0.48 * frame_w) = OUTGOING traffic lane
+                    # Right side of road (X >= 0.48 * frame_w) = INCOMING traffic lane
+                    is_right_lane = (cx >= frame_w * 0.48)
+
+                    sample_len = min(5, len(history))
+                    dy_recent = history[-1][1] - history[-sample_len][1] if len(history) >= sample_len else (p_curr[1] - p_prev[1])
+
+                    # Locked direction priority:
+                    # 1. If on right lane of road -> INCOMING
+                    # 2. If dy_recent > 0 (moving down) -> INCOMING
+                    # 3. Only if on left lane AND moving UP (dy_recent < 0) -> OUTGOING
+                    if is_right_lane or dy_recent > 0.2:
                         is_going_vehicle = False
                         is_coming_vehicle = True
+                        tr["direction"] = "coming"
+                    elif (not is_right_lane) and dy_recent < -0.2:
+                        is_going_vehicle = True
+                        is_coming_vehicle = False
+                        tr["direction"] = "going"
                     else:
-                        sample_len = min(5, len(history))
-                        dy_recent = history[-1][1] - history[-sample_len][1] if len(history) >= sample_len else (p_curr[1] - p_prev[1])
-                        dy_total = history[-1][1] - history[0][1] if len(history) >= 2 else (p_curr[1] - p_prev[1])
-
-                        if abs(dy_recent) >= 0.5:
-                            is_going_vehicle = (dy_recent < 0)
-                            is_coming_vehicle = (dy_recent > 0)
-                        elif abs(dy_total) >= 0.5:
-                            is_going_vehicle = (dy_total < 0)
-                            is_coming_vehicle = (dy_total > 0)
+                        # Fallback for small jitter
+                        if is_right_lane:
+                            is_going_vehicle = False
+                            is_coming_vehicle = True
+                            tr["direction"] = "coming"
                         else:
-                            dy_step = p_curr[1] - p_prev[1]
-                            is_going_vehicle = (dy_step < 0)
-                            is_coming_vehicle = (dy_step >= 0)
+                            is_going_vehicle = True
+                            is_coming_vehicle = False
+                            tr["direction"] = "going"
 
                     if inverted_state:
                         is_going_vehicle, is_coming_vehicle = is_coming_vehicle, is_going_vehicle
@@ -413,10 +423,11 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                     # Zone Corridor Pass-Through Check (Outgoing vehicles counted, incoming strictly rejected):
                     tot_travel = ((p_curr[0] - history[0][0])**2 + (p_curr[1] - history[0][1])**2)**0.5
                     if tot_travel >= 3.0 or disp >= 0.5:
-                        if not enable_in and is_coming_vehicle:
-                            pass  # Strictly reject incoming vehicles — do NOT count
-                        elif not enable_out and is_going_vehicle:
-                            pass  # Strictly reject outgoing vehicles — do NOT count
+                        # STRICT DIRECTION GATE:
+                        if (not enable_in) and is_coming_vehicle:
+                            pass  # Strictly REJECT incoming vehicles on right lane
+                        elif (not enable_out) and is_going_vehicle:
+                            pass  # Strictly REJECT outgoing vehicles
                         else:
                             # Pick primary counting line (default North line for going, South for coming)
                             target_line = lines[0]
@@ -446,47 +457,36 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                                 cv2.line(frame, (target_line.x1, target_line.y1), (target_line.x2, target_line.y2), (0, 255, 0), 5)
 
                 if needs_vis:
-                    # ── Pull direction from Motion-Vote Brain (display only) ──
-                    locked_dir = tr.get("direction")      # "going" | "coming" | "ambiguous" | None
+                    # ── Direction labeling and Box Color Engine ──
+                    locked_dir = tr.get("direction")      # "going" | "coming"
                     is_already_counted = tr.get("globally_counted", False)
-                    votes_g = tr.get("votes_going",  0)
-                    votes_c = tr.get("votes_coming", 0)
-                    tot_v   = max(1, votes_g + votes_c)
+                    cx, cy = history[-1][0], history[-1][1]
+                    is_on_right_lane = (cx >= frame_w * 0.48)
 
-                    # Determine motion direction
                     sample_len = min(5, len(history))
                     dy_recent = history[-1][1] - history[-sample_len][1] if len(history) >= sample_len else 0
-                    is_coming_now = (locked_dir == "coming") or (dy_recent > 0)
+                    is_coming_now = (locked_dir == "coming") or is_on_right_lane or (dy_recent > 0)
 
-                    if locked_dir == "going":
-                        motion_dir = "GOING"
-                        dir_arrow  = "^"
-                    elif locked_dir == "coming":
+                    if is_coming_now or locked_dir == "coming":
                         motion_dir = "COMING"
                         dir_arrow  = "v"
-                    elif votes_g > votes_c:
-                        motion_dir = "GOING?"
-                        dir_arrow  = "^"
-                    elif votes_c > votes_g:
-                        motion_dir = "COMING?"
-                        dir_arrow  = "v"
                     else:
-                        motion_dir = "?"
-                        dir_arrow  = "?"
+                        motion_dir = "GOING"
+                        dir_arrow  = "^"
 
                     # ── Box Color Logic (RED for Incoming when OFF, CYAN for Active Outgoing, GREEN for Counted) ──
-                    if is_already_counted:
+                    if is_already_counted and not (not enable_in and is_coming_now):
                         box_color    = (0, 255, 60)     # GREEN — counted ✓
                         status_label = "COUNTED"
-                    elif not enable_in and (is_coming_now or locked_dir == "coming"):
+                    elif not enable_in and is_coming_now:
                         box_color    = (0, 0, 255)      # BRIGHT RED — incoming (NOT COUNTING)
                         status_label = "NOT COUNTING"
-                    elif locked_dir == "going" or votes_g >= votes_c:
+                    elif motion_dir == "GOING":
                         box_color    = (255, 220, 0)    # CYAN — outgoing active
                         status_label = "OUTGOING"
                     else:
-                        box_color    = (255, 220, 0)    # CYAN — active tracking
-                        status_label = "TRACKING"
+                        box_color    = (0, 0, 255)      # BRIGHT RED — not counting
+                        status_label = "NOT COUNTING"
 
                     cur_dir_mode = job.get("direction_mode", "COMING_GOING")
                     if cur_dir_mode == "FORWARD_BACKWARD":
