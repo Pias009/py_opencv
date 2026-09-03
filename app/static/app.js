@@ -50,54 +50,15 @@ function clearError() {
 }
 
 async function uploadFileInChunks(file, onProgress) {
-  // Ultra-fast single-pass XHR upload with real-time hardware progress for files <= 32MB
-  if (file.size <= 32 * 1024 * 1024) {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      const formData = new FormData();
-      const uploadId = Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
-
-      formData.append("upload_id", uploadId);
-      formData.append("chunk_index", 0);
-      formData.append("total_chunks", 1);
-      formData.append("filename", file.name);
-      formData.append("chunk", file, file.name);
-
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) {
-          const pct = Math.round((e.loaded / e.total) * 100);
-          onProgress(pct);
-        }
-      };
-
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const data = JSON.parse(xhr.responseText);
-            resolve(data.file_path);
-          } catch (err) {
-            reject(err);
-          }
-        } else {
-          reject(new Error("Upload failed"));
-        }
-      };
-
-      xhr.onerror = () => reject(new Error("Network error during upload"));
-      xhr.open("POST", "/api/upload_chunk", true);
-      xhr.send(formData);
-    });
-  }
-
-  // 16MB chunking for maximum multi-megabyte throughput on large video streams
-  const FAST_CHUNK_SIZE = 16 * 1024 * 1024;
-  const totalChunks = Math.ceil(file.size / FAST_CHUNK_SIZE);
+  // 4MB chunking to safely fit within proxy payload limits (e.g. Nginx, Cloudflare, Railway)
+  const CHUNK_SIZE = 4 * 1024 * 1024;
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
   const uploadId = Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
   let completedFilePath = null;
 
   for (let i = 0; i < totalChunks; i++) {
-    const start = i * FAST_CHUNK_SIZE;
-    const end = Math.min(file.size, start + FAST_CHUNK_SIZE);
+    const start = i * CHUNK_SIZE;
+    const end = Math.min(file.size, start + CHUNK_SIZE);
     const chunkBlob = file.slice(start, end);
 
     const chunkFormData = new FormData();
@@ -107,8 +68,27 @@ async function uploadFileInChunks(file, onProgress) {
     chunkFormData.append("filename", file.name);
     chunkFormData.append("chunk", chunkBlob, file.name);
 
-    const res = await fetch("/api/upload_chunk", { method: "POST", body: chunkFormData });
-    const responseData = await res.json();
+    let res;
+    try {
+      res = await fetch("/api/upload_chunk", { method: "POST", body: chunkFormData });
+    } catch (netErr) {
+      throw new Error(`Network error during chunk upload (${i + 1}/${totalChunks}): ${netErr.message}`);
+    }
+
+    let textResp = await res.text();
+    let responseData = null;
+    try {
+      responseData = JSON.parse(textResp);
+    } catch (parseErr) {
+      if (!res.ok) {
+        throw new Error(`Server returned HTTP ${res.status}: ${textResp.trim() || res.statusText}`);
+      }
+      throw new Error(`Invalid server response: ${textResp.slice(0, 100)}`);
+    }
+
+    if (!res.ok) {
+      throw new Error(responseData.error || `Upload failed with status ${res.status}`);
+    }
 
     const progressPct = Math.round(((i + 1) / totalChunks) * 100);
     onProgress(progressPct);
