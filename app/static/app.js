@@ -34,6 +34,28 @@ const newVideoBtn = document.getElementById("new-video-btn");
 
 const historyBody = document.getElementById("history-body");
 
+// Video Source Selection & Cloud URL Elements
+const tabFileBtn = document.getElementById("tab-file-btn");
+const tabUrlBtn = document.getElementById("tab-url-btn");
+const sourceFileSection = document.getElementById("source-file-section");
+const sourceUrlSection = document.getElementById("source-url-section");
+const videoUrlInput = document.getElementById("video-url-input");
+const urlClearBtn = document.getElementById("url-clear-btn");
+
+// Detailed Upload & Cloud Ingestion Progress Elements
+const uploadProgressCard = document.getElementById("upload-progress-card");
+const uploadStageLabel = document.getElementById("upload-stage-label");
+const uploadPctLabel = document.getElementById("upload-pct-label");
+const uploadProgressFill = document.getElementById("upload-progress-fill");
+const uploadBytesLabel = document.getElementById("upload-bytes-label");
+const uploadSpeedLabel = document.getElementById("upload-speed-label");
+const uploadEtaLabel = document.getElementById("upload-eta-label");
+const uploadRetryWarning = document.getElementById("upload-retry-warning");
+const retryChunkNum = document.getElementById("retry-chunk-num");
+const retryAttemptNum = document.getElementById("retry-attempt-num");
+
+let currentSourceTab = "file"; // 'file' or 'url'
+
 const LINE_COLORS = ["#4f8cff", "#ff7a45", "#3ddc84", "#ff5c5c", "#c084fc", "#facc15"];
 
 let currentJobId = null;
@@ -49,17 +71,121 @@ function clearError() {
   errorMsg.textContent = "";
 }
 
+// Format byte counts into human-readable MBs
+function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) return "0.0 MB";
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+}
+
+function showProgressCard(initialStage) {
+  if (uploadProgressCard) uploadProgressCard.hidden = false;
+  if (uploadStageLabel && initialStage) uploadStageLabel.textContent = initialStage;
+}
+
+function hideProgressCard() {
+  if (uploadProgressCard) uploadProgressCard.hidden = true;
+  hideRetryWarning();
+}
+
+function showRetryWarning(chunkNum, attemptNum) {
+  if (retryChunkNum) retryChunkNum.textContent = chunkNum;
+  if (retryAttemptNum) retryAttemptNum.textContent = attemptNum;
+  if (uploadRetryWarning) uploadRetryWarning.hidden = false;
+}
+
+function hideRetryWarning() {
+  if (uploadRetryWarning) uploadRetryWarning.hidden = true;
+}
+
+function updateProgressCard(opts) {
+  showProgressCard();
+  if (opts.stage && uploadStageLabel) uploadStageLabel.textContent = opts.stage;
+  const pct = Math.min(100, Math.max(0, opts.pct || 0));
+  if (uploadPctLabel) uploadPctLabel.textContent = `${pct}%`;
+  if (uploadProgressFill) uploadProgressFill.style.width = `${pct}%`;
+
+  if (uploadBytesLabel) {
+    if (opts.totalBytes && opts.totalBytes > 0) {
+      uploadBytesLabel.textContent = `${formatBytes(opts.uploadedBytes)} / ${formatBytes(opts.totalBytes)}`;
+    } else {
+      uploadBytesLabel.textContent = formatBytes(opts.uploadedBytes);
+    }
+  }
+
+  if (uploadSpeedLabel) {
+    if (opts.speedBytesPerSec > 0) {
+      uploadSpeedLabel.textContent = `~${formatBytes(opts.speedBytesPerSec)}/s`;
+    } else {
+      uploadSpeedLabel.textContent = "~0.0 MB/s";
+    }
+  }
+
+  if (uploadEtaLabel) {
+    if (opts.etaSec !== undefined && opts.etaSec !== null) {
+      if (opts.etaSec <= 0 || pct >= 100) {
+        uploadEtaLabel.textContent = "Done";
+      } else if (opts.etaSec < 60) {
+        uploadEtaLabel.textContent = `ETA: ~${opts.etaSec}s`;
+      } else {
+        const mins = Math.floor(opts.etaSec / 60);
+        const secs = opts.etaSec % 60;
+        uploadEtaLabel.textContent = `ETA: ~${mins}m ${secs}s`;
+      }
+    } else {
+      uploadEtaLabel.textContent = "ETA: --";
+    }
+  }
+}
+
+// Source Tab Switching Event Listeners
+if (tabFileBtn && tabUrlBtn) {
+  tabFileBtn.addEventListener("click", () => {
+    currentSourceTab = "file";
+    tabFileBtn.classList.add("active");
+    tabUrlBtn.classList.remove("active");
+    if (sourceFileSection) sourceFileSection.hidden = false;
+    if (sourceUrlSection) sourceUrlSection.hidden = true;
+    clearError();
+  });
+
+  tabUrlBtn.addEventListener("click", () => {
+    currentSourceTab = "url";
+    tabUrlBtn.classList.add("active");
+    tabFileBtn.classList.remove("active");
+    if (sourceFileSection) sourceFileSection.hidden = true;
+    if (sourceUrlSection) sourceUrlSection.hidden = false;
+    clearError();
+  });
+}
+
+if (videoUrlInput && urlClearBtn) {
+  videoUrlInput.addEventListener("input", () => {
+    urlClearBtn.style.display = videoUrlInput.value.trim() ? "block" : "none";
+    clearError();
+  });
+  urlClearBtn.addEventListener("click", () => {
+    videoUrlInput.value = "";
+    urlClearBtn.style.display = "none";
+    clearError();
+  });
+}
+
+// Resilient 4MB Chunked Upload with Exponential Backoff Auto-Retries & Live Speed Metrics
 async function uploadFileInChunks(file, onProgress) {
-  // 4MB chunking to safely fit within proxy payload limits (e.g. Nginx, Cloudflare, Railway)
-  const CHUNK_SIZE = 4 * 1024 * 1024;
+  const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB safe proxy slices
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
   const uploadId = Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
   let completedFilePath = null;
+
+  showProgressCard(`Uploading "${file.name}" to Railway in 4MB chunks…`);
+  const startTime = Date.now();
+  let uploadedBytes = 0;
 
   for (let i = 0; i < totalChunks; i++) {
     const start = i * CHUNK_SIZE;
     const end = Math.min(file.size, start + CHUNK_SIZE);
     const chunkBlob = file.slice(start, end);
+    const chunkSize = end - start;
 
     const chunkFormData = new FormData();
     chunkFormData.append("upload_id", uploadId);
@@ -68,37 +194,149 @@ async function uploadFileInChunks(file, onProgress) {
     chunkFormData.append("filename", file.name);
     chunkFormData.append("chunk", chunkBlob, file.name);
 
-    let res;
-    try {
-      res = await fetch("/api/upload_chunk", { method: "POST", body: chunkFormData });
-    } catch (netErr) {
-      throw new Error(`Network error during chunk upload (${i + 1}/${totalChunks}): ${netErr.message}`);
-    }
+    // Auto-retry up to 3 times per chunk with exponential backoff
+    const MAX_RETRIES = 3;
+    let chunkSuccess = false;
+    let lastError = null;
 
-    let textResp = await res.text();
-    let responseData = null;
-    try {
-      responseData = JSON.parse(textResp);
-    } catch (parseErr) {
-      if (!res.ok) {
-        throw new Error(`Server returned HTTP ${res.status}: ${textResp.trim() || res.statusText}`);
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        if (attempt > 1) {
+          showRetryWarning(i + 1, attempt);
+          await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt - 2)));
+        } else {
+          hideRetryWarning();
+        }
+
+        const res = await fetch("/api/upload_chunk", { method: "POST", body: chunkFormData });
+        const textResp = await res.text();
+        let responseData = null;
+        try {
+          responseData = JSON.parse(textResp);
+        } catch (parseErr) {
+          if (!res.ok) {
+            throw new Error(`Server returned HTTP ${res.status}: ${textResp.trim() || res.statusText}`);
+          }
+          throw new Error(`Invalid server response: ${textResp.slice(0, 100)}`);
+        }
+
+        if (!res.ok) {
+          throw new Error(responseData.error || `Upload failed with status ${res.status}`);
+        }
+
+        chunkSuccess = true;
+        hideRetryWarning();
+
+        if (responseData && responseData.status === "complete") {
+          completedFilePath = responseData.file_path;
+        }
+        break;
+      } catch (err) {
+        lastError = err;
+        console.warn(`Chunk ${i + 1}/${totalChunks} attempt ${attempt} failed:`, err);
+        if (attempt === MAX_RETRIES) {
+          hideRetryWarning();
+          throw new Error(`Failed to upload chunk ${i + 1}/${totalChunks} after ${MAX_RETRIES} attempts: ${err.message}`);
+        }
       }
-      throw new Error(`Invalid server response: ${textResp.slice(0, 100)}`);
     }
 
-    if (!res.ok) {
-      throw new Error(responseData.error || `Upload failed with status ${res.status}`);
-    }
+    uploadedBytes += chunkSize;
+    const elapsedSec = Math.max(0.1, (Date.now() - startTime) / 1000);
+    const speedBytesPerSec = uploadedBytes / elapsedSec;
+    const remainingBytes = file.size - uploadedBytes;
+    const etaSec = speedBytesPerSec > 0 ? Math.ceil(remainingBytes / speedBytesPerSec) : 0;
+    const pct = Math.round((uploadedBytes / file.size) * 100);
 
-    const progressPct = Math.round(((i + 1) / totalChunks) * 100);
-    onProgress(progressPct);
+    updateProgressCard({
+      stage: `Uploading chunk ${i + 1} of ${totalChunks} to Railway…`,
+      pct: pct,
+      uploadedBytes: uploadedBytes,
+      totalBytes: file.size,
+      speedBytesPerSec: speedBytesPerSec,
+      etaSec: etaSec
+    });
 
-    if (responseData && responseData.status === "complete") {
-      completedFilePath = responseData.file_path;
+    if (onProgress) {
+      onProgress(pct);
     }
   }
 
   return completedFilePath;
+}
+
+// Fetch Cloud Video (Google Drive, Dropbox, direct MP4) directly on Railway Server
+async function fetchCloudVideo(url) {
+  showProgressCard("Connecting to cloud video source from Railway datacenter…");
+  clearError();
+
+  const res = await fetch("/api/fetch_url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: url })
+  });
+
+  const data = await res.json();
+  if (!res.ok || !data.download_id) {
+    throw new Error(data.error || "Failed to initiate cloud download.");
+  }
+
+  const downloadId = data.download_id;
+  const startTime = Date.now();
+
+  return new Promise((resolve, reject) => {
+    const timer = setInterval(async () => {
+      try {
+        const pollRes = await fetch(`/api/fetch_url_progress/${downloadId}`);
+        const pollData = await pollRes.json();
+
+        if (pollData.error) {
+          clearInterval(timer);
+          hideProgressCard();
+          reject(new Error(pollData.error));
+          return;
+        }
+
+        if (pollData.status === "error") {
+          clearInterval(timer);
+          hideProgressCard();
+          reject(new Error(pollData.error || "Cloud download failed."));
+          return;
+        }
+
+        const downloaded = pollData.downloaded_bytes || 0;
+        const total = pollData.total_bytes || 0;
+        const pct = pollData.progress || 0;
+        const elapsedSec = Math.max(0.1, (Date.now() - startTime) / 1000);
+        const speed = downloaded / elapsedSec;
+        const remaining = total > downloaded ? total - downloaded : 0;
+        const eta = speed > 0 && total > 0 ? Math.ceil(remaining / speed) : 0;
+
+        updateProgressCard({
+          stage: pollData.status === "connecting"
+            ? "Connecting to cloud source…"
+            : `Streaming "${pollData.filename || 'video'}" directly into Railway…`,
+          pct: Math.round(pct),
+          uploadedBytes: downloaded,
+          totalBytes: total,
+          speedBytesPerSec: speed,
+          etaSec: eta
+        });
+
+        if (pollData.done && pollData.status === "complete") {
+          clearInterval(timer);
+          resolve({
+            filePath: pollData.file_path,
+            filename: pollData.filename
+          });
+        }
+      } catch (err) {
+        clearInterval(timer);
+        hideProgressCard();
+        reject(err);
+      }
+    }, 1000);
+  });
 }
 
 // Dynamic Left Sidebar Shift & Live Rules Updater
@@ -394,15 +632,26 @@ updateSidebarRules();
 
 async function startJob() {
   clearError();
-  const file = fileInput.files[0];
 
-  if (!file) {
-    showError("Choose a video file to upload.");
-    return;
+  let file = null;
+  let url = null;
+
+  if (currentSourceTab === "file") {
+    file = fileInput.files[0];
+    if (!file) {
+      showError("Choose a video file to upload.");
+      return;
+    }
+  } else {
+    url = (videoUrlInput ? videoUrlInput.value : "").trim();
+    if (!url) {
+      showError("Please enter a valid video or cloud link URL.");
+      return;
+    }
   }
 
   startBtn.disabled = true;
-  startBtn.textContent = "Uploading 0%…";
+  startBtn.textContent = "Preparing…";
 
   const speedSelect = document.getElementById("speed-select");
   const lineModeSelect = document.getElementById("line-mode-select");
@@ -425,17 +674,29 @@ async function startJob() {
   const allEnabledLines = Array.from(new Set([...enabledLinesIn, ...enabledLinesOut]));
 
   try {
-    const uploadedFilePath = await uploadFileInChunks(file, (pct) => {
-      startBtn.textContent = `Uploading ${pct}%…`;
-    });
+    let uploadedFilePath = null;
+    let videoFilename = "video.mp4";
 
+    if (currentSourceTab === "file") {
+      videoFilename = file.name;
+      uploadedFilePath = await uploadFileInChunks(file, (pct) => {
+        startBtn.textContent = `Uploading ${pct}%…`;
+      });
+    } else {
+      startBtn.textContent = "Fetching Cloud Video…";
+      const cloudRes = await fetchCloudVideo(url);
+      uploadedFilePath = cloudRes.filePath;
+      videoFilename = cloudRes.filename;
+    }
+
+    hideProgressCard();
     startBtn.textContent = "Starting Analysis…";
 
     const startFormData = new FormData();
     if (uploadedFilePath) {
       startFormData.append("file_path", uploadedFilePath);
     }
-    startFormData.append("filename", file.name);
+    startFormData.append("filename", videoFilename);
     startFormData.append("speed", speed);
     startFormData.append("line_mode", lineMode);
     startFormData.append("direction_mode", directionMode);
@@ -456,7 +717,7 @@ async function startJob() {
       resetStartBtn();
     }
   } catch (err) {
-    showError("Upload error: " + err.message);
+    showError("Video ingestion error: " + err.message);
     resetStartBtn();
   }
 }
@@ -464,6 +725,7 @@ async function startJob() {
 function resetStartBtn() {
   startBtn.disabled = false;
   startBtn.textContent = "Start Counting";
+  hideProgressCard();
 }
 
 function resetCancelBtn() {
@@ -472,6 +734,7 @@ function resetCancelBtn() {
 }
 
 function beginRunView() {
+  hideProgressCard();
   reportCard.hidden = true;
   runCard.hidden = false;
   runTitle.textContent = "Processing…";
@@ -711,10 +974,15 @@ function updateDropZoneLabel() {
 
 function startNewVideo() {
   fileInput.value = "";
+  if (videoUrlInput) {
+    videoUrlInput.value = "";
+    if (urlClearBtn) urlClearBtn.style.display = "none";
+  }
   updateDropZoneLabel();
   clearError();
   resetStartBtn();
   resetCancelBtn();
+  hideProgressCard();
   reportCard.hidden = true;
   runCard.hidden = true;
   setupCard.hidden = false;
@@ -745,11 +1013,26 @@ const modalConfirmBtn = document.getElementById("modal-confirm-btn");
 
 function openConfirmModal() {
   clearError();
-  const file = fileInput.files[0];
 
-  if (!file) {
-    showError("Please select or drop a video file first.");
-    return;
+  let videoDisplayName = "";
+  if (currentSourceTab === "file") {
+    const file = fileInput.files[0];
+    if (!file) {
+      showError("Please select or drop a video file first.");
+      return;
+    }
+    videoDisplayName = file.name;
+  } else {
+    const urlVal = (videoUrlInput ? videoUrlInput.value : "").trim();
+    if (!urlVal) {
+      showError("Please enter a valid video or cloud link URL first.");
+      return;
+    }
+    let parsedName = urlVal.split("/").filter(Boolean).pop() || "Cloud Video";
+    if (parsedName.includes("?")) parsedName = parsedName.split("?")[0];
+    if (urlVal.includes("drive.google.com")) parsedName = "Google Drive Shared Video";
+    else if (urlVal.includes("dropbox.com")) parsedName = "Dropbox Video: " + parsedName;
+    videoDisplayName = parsedName;
   }
 
   const speedSelect = document.getElementById("speed-select");
@@ -782,14 +1065,14 @@ function openConfirmModal() {
   const linesVal = document.getElementById("modal-lines-val");
   const humanSummary = document.getElementById("modal-human-summary");
 
-  if (videoVal) videoVal.textContent = file.name;
+  if (videoVal) videoVal.textContent = videoDisplayName;
   if (modeVal) modeVal.textContent = modeText;
   if (speedVal) speedVal.textContent = speedText;
   if (namingVal) namingVal.textContent = namingText;
   if (flowsVal) flowsVal.textContent = flowStr;
   if (linesVal) linesVal.textContent = linesStr;
 
-  let summary = `The AI engine will analyze '${file.name}' using ${modeText} at ${speedText}. `;
+  let summary = `The AI engine will analyze '${videoDisplayName}' using ${modeText} at ${speedText}. `;
   if (flowsText.length === 2) {
     summary += `It will count both incoming & outgoing traffic across ${linesStr} lines.`;
   } else if (flowsText.length === 1) {

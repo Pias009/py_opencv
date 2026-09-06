@@ -1,9 +1,13 @@
 import json
 import os
+import re
+import shutil
 import threading
 import time
+import urllib.parse
 import uuid
 
+import requests
 from flask import Flask, Response, jsonify, render_template, request, send_from_directory
 from werkzeug.utils import secure_filename
 
@@ -11,18 +15,23 @@ from counter import box_lines
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 UPLOAD_DIR = os.path.join(BASE_DIR, "data", "uploads")
+CHUNK_TEMP_DIR = os.path.join(BASE_DIR, "data", "chunks")
 RESULTS_DIR = os.path.join(BASE_DIR, "data", "results")
 RESULTS_INDEX = os.path.join(RESULTS_DIR, "index.json")
 
 ALLOWED_EXT = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(CHUNK_TEMP_DIR, exist_ok=True)
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
 app = Flask(__name__)
 
 jobs = {}
 jobs_lock = threading.Lock()
+
+url_downloads = {}
+url_downloads_lock = threading.Lock()
 
 
 def day_results_dir(started_at=None):
@@ -98,6 +107,168 @@ def refresh_reports(job_id, job, day_dir, day):
     return entry
 
 
+def cleanup_raw_video(video_path):
+    """Safely removes raw uploaded video after processing to prevent Railway disk exhaustion."""
+    if not video_path:
+        return
+    try:
+        abs_video = os.path.abspath(video_path)
+        abs_upload_dir = os.path.abspath(UPLOAD_DIR)
+        if abs_video.startswith(abs_upload_dir) and os.path.isfile(abs_video):
+            os.remove(abs_video)
+    except Exception:
+        pass
+
+
+def clean_stale_temp_files():
+    """Clean up leftover .part chunks older than 2 hours and old uploads older than 24 hours."""
+    now = time.time()
+    # Clean CHUNK_TEMP_DIR
+    if os.path.exists(CHUNK_TEMP_DIR):
+        for item in os.listdir(CHUNK_TEMP_DIR):
+            item_path = os.path.join(CHUNK_TEMP_DIR, item)
+            try:
+                if os.path.isdir(item_path):
+                    if now - os.path.getmtime(item_path) > 7200:
+                        shutil.rmtree(item_path, ignore_errors=True)
+            except Exception:
+                pass
+    # Clean orphaned uploads older than 24 hours
+    if os.path.exists(UPLOAD_DIR):
+        for item in os.listdir(UPLOAD_DIR):
+            if item.startswith("."):
+                continue
+            item_path = os.path.join(UPLOAD_DIR, item)
+            try:
+                if os.path.isfile(item_path) and (now - os.path.getmtime(item_path) > 86400):
+                    os.remove(item_path)
+            except Exception:
+                pass
+
+
+def resolve_direct_video_url(raw_url: str):
+    """
+    Analyzes raw_url and converts Google Drive and Dropbox share links to direct downloadable streams.
+    Returns (resolved_url, headers, is_gdrive, gdrive_file_id, suggested_filename)
+    """
+    url = raw_url.strip()
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+    }
+
+    # 1. Google Drive share link
+    gdrive_match = re.search(r"drive\.google\.com\/(?:file\/d\/|open\?id=)([a-zA-Z0-9_-]+)", url)
+    if gdrive_match:
+        file_id = gdrive_match.group(1)
+        direct_url = f"https://drive.google.com/uc?export=download&id={file_id}"
+        return direct_url, headers, True, file_id, f"gdrive_video_{file_id[:8]}.mp4"
+
+    # 2. Dropbox share link
+    if "dropbox.com" in url:
+        if "dl=0" in url:
+            url = url.replace("dl=0", "dl=1")
+        elif "dl=1" not in url:
+            sep = "&" if "?" in url else "?"
+            url = f"{url}{sep}dl=1"
+        url = url.replace("www.dropbox.com", "dl.dropboxusercontent.com")
+        path_name = urllib.parse.urlparse(url).path.split("/")[-1] or "dropbox_video.mp4"
+        return url, headers, False, None, path_name
+
+    # 3. Direct HTTP/HTTPS link
+    parsed = urllib.parse.urlparse(url)
+    path_name = parsed.path.split("/")[-1] or "cloud_video.mp4"
+    if "?" in path_name:
+        path_name = path_name.split("?")[0]
+    if not any(path_name.lower().endswith(ext) for ext in ALLOWED_EXT):
+        path_name += ".mp4"
+
+    return url, headers, False, None, path_name
+
+
+def download_url_worker(download_id, raw_url):
+    info = url_downloads[download_id]
+    try:
+        resolved_url, headers, is_gdrive, gdrive_file_id, suggested_name = resolve_direct_video_url(raw_url)
+        session = requests.Session()
+        session.headers.update(headers)
+
+        res = session.get(resolved_url, stream=True, timeout=30)
+        res.raise_for_status()
+
+        if is_gdrive:
+            confirm_token = None
+            for key, val in session.cookies.items():
+                if key.startswith("download_warning"):
+                    confirm_token = val
+                    break
+            if not confirm_token:
+                text_peek = res.text[:2000]
+                match = re.search(r"confirm=([0-9A-Za-z_-]+)", text_peek)
+                if match:
+                    confirm_token = match.group(1)
+
+            if confirm_token:
+                confirm_url = f"https://drive.google.com/uc?export=download&confirm={confirm_token}&id={gdrive_file_id}"
+                res = session.get(confirm_url, stream=True, timeout=30)
+                res.raise_for_status()
+
+        cd_header = res.headers.get("Content-Disposition", "")
+        if "filename=" in cd_header:
+            cd_match = re.search(r'filename=["\']?([^"\';]+)["\']?', cd_header)
+            if cd_match:
+                suggested_name = secure_filename(cd_match.group(1))
+
+        if not any(suggested_name.lower().endswith(ext) for ext in ALLOWED_EXT):
+            suggested_name += ".mp4"
+
+        total_bytes = None
+        if "Content-Length" in res.headers:
+            try:
+                total_bytes = int(res.headers["Content-Length"])
+            except ValueError:
+                pass
+
+        MAX_DOWNLOAD_BYTES = 2500 * 1024 * 1024  # 2.5 GB limit safeguard for Railway disk
+        if total_bytes and total_bytes > MAX_DOWNLOAD_BYTES:
+            raise ValueError(f"Video file is too large ({round(total_bytes / (1024*1024), 1)} MB). Limit is 2.5 GB.")
+
+        unique_name = f"{uuid.uuid4().hex}_{suggested_name}"
+        save_path = os.path.join(UPLOAD_DIR, unique_name)
+
+        with url_downloads_lock:
+            info["total_bytes"] = total_bytes
+            info["filename"] = suggested_name
+            info["status"] = "downloading"
+
+        downloaded = 0
+        CHUNK_WRITE = 1024 * 1024  # 1MB buffer
+        with open(save_path, "wb") as f:
+            for chunk in res.iter_content(chunk_size=CHUNK_WRITE):
+                if not chunk:
+                    continue
+                f.write(chunk)
+                downloaded += len(chunk)
+                if downloaded > MAX_DOWNLOAD_BYTES:
+                    raise ValueError("Download exceeded 2.5 GB limit.")
+                with url_downloads_lock:
+                    info["downloaded_bytes"] = downloaded
+                    if total_bytes and total_bytes > 0:
+                        info["progress"] = round((downloaded / total_bytes) * 100, 1)
+
+        with url_downloads_lock:
+            info["status"] = "complete"
+            info["file_path"] = save_path
+            info["filename"] = suggested_name
+            info["progress"] = 100
+            info["done"] = True
+
+    except Exception as e:
+        with url_downloads_lock:
+            info["status"] = "error"
+            info["error"] = str(e)
+            info["done"] = True
+
+
 def prewarm_models():
     """Pre-load YOLO model in background at startup to eliminate delay when user uploads video."""
     try:
@@ -109,7 +280,9 @@ def prewarm_models():
     except Exception:
         pass
 
+
 threading.Thread(target=prewarm_models, daemon=True).start()
+threading.Thread(target=clean_stale_temp_files, daemon=True).start()
 
 
 def job_worker(job_id, video_path, source_label):
@@ -159,6 +332,7 @@ def job_worker(job_id, video_path, source_label):
     day = os.path.basename(day_dir)
     entry = refresh_reports(job_id, job, day_dir, day)
     save_history_entry(entry)
+    cleanup_raw_video(video_path)
 
 
 @app.route("/")
@@ -171,8 +345,42 @@ def api_history():
     return jsonify(load_history())
 
 
-CHUNK_TEMP_DIR = os.path.join(BASE_DIR, "data", "chunks")
-os.makedirs(CHUNK_TEMP_DIR, exist_ok=True)
+@app.route("/api/fetch_url", methods=["POST"])
+def api_fetch_url():
+    """Starts background streaming download of video from direct URL, Google Drive, or Dropbox."""
+    data = request.get_json(silent=True) or {}
+    raw_url = (data.get("url") or "").strip()
+    if not raw_url:
+        return jsonify({"error": "Please provide a valid video URL"}), 400
+
+    parsed = urllib.parse.urlparse(raw_url)
+    if parsed.scheme not in ("http", "https"):
+        return jsonify({"error": "Invalid URL scheme. Must start with http:// or https://"}), 400
+
+    download_id = uuid.uuid4().hex
+    with url_downloads_lock:
+        url_downloads[download_id] = {
+            "status": "connecting",
+            "downloaded_bytes": 0,
+            "total_bytes": 0,
+            "progress": 0,
+            "filename": "cloud_video.mp4",
+            "file_path": None,
+            "error": None,
+            "done": False,
+        }
+
+    threading.Thread(target=download_url_worker, args=(download_id, raw_url), daemon=True).start()
+    return jsonify({"download_id": download_id})
+
+
+@app.route("/api/fetch_url_progress/<download_id>")
+def api_fetch_url_progress(download_id):
+    with url_downloads_lock:
+        info = url_downloads.get(download_id)
+    if not info:
+        return jsonify({"error": "Download ID not found"}), 404
+    return jsonify(info)
 
 
 @app.route("/api/upload_chunk", methods=["POST"])
@@ -232,10 +440,18 @@ def api_upload_chunk():
 @app.route("/api/start", methods=["POST"])
 def api_start():
     save_path = request.form.get("file_path")
-    filename = request.form.get("filename", "Uploaded Video")
+    raw_filename = request.form.get("filename")
 
     if save_path and os.path.exists(save_path):
-        filename = os.path.basename(save_path)
+        if raw_filename and raw_filename.strip():
+            filename = secure_filename(raw_filename.strip()) or os.path.basename(save_path)
+        else:
+            base = os.path.basename(save_path)
+            # If named uuid_filename.mp4, strip 32-hex-char uuid + underscore
+            if len(base) > 33 and base[32] == "_":
+                filename = base[33:]
+            else:
+                filename = base
     elif "file" in request.files and request.files["file"].filename:
         f = request.files["file"]
         filename = secure_filename(f.filename)

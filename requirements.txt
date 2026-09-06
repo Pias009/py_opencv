@@ -8,3 +8,4 @@ numpy
 reportlab
 openpyxl
 gunicorn
+requests

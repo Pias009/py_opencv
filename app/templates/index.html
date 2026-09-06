@@ -81,11 +81,68 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 
   <main class="stage">
     <section class="card" id="setup-card">
-      <div class="field">
-        <label for="file-input">Select or Drag &amp; Drop Video</label>
-        <div id="drop-zone" class="drop-zone">
-          <p id="drop-zone-text">📁 Drag &amp; drop a video here, or click to choose a file</p>
-          <input id="file-input" type="file" accept=".mp4,.avi,.mov,.mkv,.webm" hidden>
+      <!-- Video Ingestion Source Selector (Chunked Upload / Cloud URL) -->
+      <div class="video-source-container">
+        <div class="source-tabs">
+          <button type="button" class="source-tab active" id="tab-file-btn" data-source="file">
+            <span class="tab-icon">📁</span>
+            <span class="tab-label">Upload Video File</span>
+            <span class="source-tab-badge">4MB Chunked</span>
+          </button>
+          <button type="button" class="source-tab" id="tab-url-btn" data-source="url">
+            <span class="tab-icon">🔗</span>
+            <span class="tab-label">Cloud Video Link</span>
+            <span class="source-tab-badge">GDrive • Dropbox • Direct</span>
+          </button>
+        </div>
+
+        <!-- Tab 1: Local File Dropzone -->
+        <div id="source-file-section" class="source-panel active">
+          <div class="field">
+            <div id="drop-zone" class="drop-zone">
+              <p id="drop-zone-text">📁 Drag &amp; drop a video here, or click to choose a file</p>
+              <input id="file-input" type="file" accept=".mp4,.avi,.mov,.mkv,.webm" hidden>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Cloud URL Input -->
+        <div id="source-url-section" class="source-panel" hidden>
+          <div class="field">
+            <div class="url-input-card">
+              <div class="url-input-row">
+                <input type="url" id="video-url-input" class="video-url-input" placeholder="Paste Google Drive share link, Dropbox link, or direct MP4 URL…">
+                <button type="button" id="url-clear-btn" class="url-action-btn" title="Clear URL" style="display: none;">✕</button>
+              </div>
+              <div class="url-provider-tags">
+                <span class="url-tag">⚡ Direct MP4 / MKV / MOV</span>
+                <span class="url-tag">☁️ Google Drive (View/Share Link)</span>
+                <span class="url-tag">📦 Dropbox Link</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Detailed Upload / Download Progress Card -->
+        <div id="upload-progress-card" class="upload-progress-card" hidden>
+          <div class="upload-progress-header">
+            <div class="progress-title-group">
+              <span id="upload-spinner" class="upload-spinner">⏳</span>
+              <span id="upload-stage-label" class="upload-stage-label">Uploading video in 4MB chunks…</span>
+            </div>
+            <span id="upload-pct-label" class="upload-pct-label">0%</span>
+          </div>
+          <div class="progress-bar upload-progress-bar-track">
+            <div class="progress-fill upload-progress-bar-fill" id="upload-progress-fill" style="width: 0%;"></div>
+          </div>
+          <div class="upload-progress-meta">
+            <span id="upload-bytes-label">0.0 MB / 0.0 MB</span>
+            <span id="upload-speed-label">~0.0 MB/s</span>
+            <span id="upload-eta-label">ETA: --</span>
+          </div>
+          <div id="upload-retry-warning" class="upload-retry-warning" hidden>
+            <span>⚠️ Network glitch detected. Retrying chunk <strong id="retry-chunk-num">1</strong> (attempt <strong id="retry-attempt-num">1</strong>/3)…</span>
+          </div>
         </div>
       </div>
       <div class="field-row" style="margin-top: 14px; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;">
