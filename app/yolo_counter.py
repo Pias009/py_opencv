@@ -19,9 +19,9 @@ DETECT_EVERY = 1      # run YOLO every Nth frame; other frames reuse the last kn
 COCO_TO_SURVEY = {
     "bicycle": "Bicycle",
     "motorcycle": "Motorcycle",
-    "car": "Car/Suv",
-    "bus": "Large Bus",
-    "truck": "Medium Truck/2-Axle Truck",
+    "car": "Sedan / Private Car",
+    "bus": "Bus / Mini Bus",
+    "truck": "Truck (Heavy & Medium)",
 }
 VEHICLE_CLASSES = set(COCO_TO_SURVEY.keys())
 

@@ -14,9 +14,9 @@ COCO_MODEL_PATH = os.path.join(BASE_DIR, "models", "yolov8n.pt")
 COCO_TO_SURVEY = {
     "bicycle": "Bicycle",
     "motorcycle": "Motorcycle",
-    "car": "Car/Suv",
-    "bus": "Large Bus",
-    "truck": "Medium Truck/2-Axle Truck",
+    "car": "Sedan / Private Car",
+    "bus": "Bus / Mini Bus",
+    "truck": "Truck (Heavy & Medium)",
 }
 
 # BNVD (Bangladeshi Native Vehicle Dataset) YOLOv8 — trained specifically on
@@ -25,21 +25,21 @@ COCO_TO_SURVEY = {
 BNVD_MODEL_PATH = os.path.join(BASE_DIR, "models", "bnvd_yolov8.pt")
 BNVD_TO_SURVEY = {
     "Bicycle": "Bicycle",
-    "Rickshaw": "Rickshaw",
-    "CNG": "Auto",
+    "Rickshaw": "Rickshaw / Van",
+    "CNG": "Three-Wheeler (CNG)",
     "Motorbike": "Motorcycle",
-    "Car": "Car/Suv",
-    "MPV": "Car/Suv",
-    "Van": "Small Open Truck/Small Van",
-    "ShoppingVan": "Small Open Truck/Small Van",
-    "Pickup": "Jeep/Pick-up",
-    "Bus": "Large Bus",
-    "Truck": "Medium Truck/2-Axle Truck",
-    "Easybike": "Auto",
-    "Leguna": "Tempo/Leguna/Maxi",
-    "Bhotbhoti": "Other",
-    "PowerTiller": "Other",
-    "Wheelbarrow": "Push car (Thela gari)",
+    "Car": "Sedan / Private Car",
+    "MPV": "Microbus (inc. Ambulance)",
+    "Van": "Mini Truck / Covered Van",
+    "ShoppingVan": "Mini Truck / Covered Van",
+    "Pickup": "Jeep / Pickup / SUV",
+    "Bus": "Bus / Mini Bus",
+    "Truck": "Truck (Heavy & Medium)",
+    "Easybike": "Motorized Rickshaw (Easybike)",
+    "Leguna": "Human Hauler / Leguna / Tempo",
+    "Bhotbhoti": "Other / Agricultural",
+    "PowerTiller": "Other / Agricultural",
+    "Wheelbarrow": "Animal / Push Cart (Thela Gari)",
     "Pedestrian": None,  # not a vehicle; ignored
 }
 

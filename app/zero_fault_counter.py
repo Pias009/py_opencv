@@ -13,29 +13,34 @@ COCO_MODEL_PATH = os.path.join(BASE_DIR, "models", "yolov8n.pt")
 
 BNVD_TO_SURVEY = {
     "Bicycle": "Bicycle",
-    "Rickshaw": "Rickshaw",
-    "CNG": "Auto",
+    "Rickshaw": "Rickshaw / Van",
+    "CNG": "Three-Wheeler (CNG)",
     "Motorbike": "Motorcycle",
-    "Car": "Car/Suv",
-    "MPV": "Car/Suv",
-    "Van": "Small Open Truck/Small Van",
-    "ShoppingVan": "Small Open Truck/Small Van",
-    "Pickup": "Jeep/Pick-up",
-    "Bus": "Large Bus",
-    "Truck": "Medium Truck/2-Axle Truck",
-    "Easybike": "Auto",
-    "Leguna": "Tempo/Leguna/Maxi",
-    "Bhotbhoti": "Other",
-    "PowerTiller": "Other",
-    "Wheelbarrow": "Push car (Thela gari)",
+    "Car": "Sedan / Private Car",
+    "MPV": "Microbus (inc. Ambulance)",
+    "Van": "Mini Truck / Covered Van",
+    "ShoppingVan": "Mini Truck / Covered Van",
+    "Pickup": "Jeep / Pickup / SUV",
+    "Bus": "Bus / Mini Bus",
+    "Truck": "Truck (Heavy & Medium)",
+    "Easybike": "Motorized Rickshaw (Easybike)",
+    "Leguna": "Human Hauler / Leguna / Tempo",
+    "Bhotbhoti": "Other / Agricultural",
+    "PowerTiller": "Other / Agricultural",
+    "Wheelbarrow": "Animal / Push Cart (Thela Gari)",
 }
 
 COCO_TO_SURVEY = {
     "bicycle": "Bicycle",
     "motorcycle": "Motorcycle",
-    "car": "Car/Suv",
-    "bus": "Large Bus",
-    "truck": "Medium Truck/2-Axle Truck",
+    "car": "Sedan / Private Car",
+    "bus": "Bus / Mini Bus",
+    "truck": "Truck (Heavy & Medium)",
+}
+
+HEAVY_CATEGORIES = {
+    "Bus", "Large Bus", "Bus / Mini Bus",
+    "Truck", "Medium Truck/2-Axle Truck", "Truck (Heavy & Medium)",
 }
 
 
@@ -424,7 +429,7 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                     # Zone Corridor Pass-Through Check (Outgoing vehicles counted, incoming strictly rejected):
                     tot_travel = ((p_curr[0] - history[0][0])**2 + (p_curr[1] - history[0][1])**2)**0.5
                     cat = tr["best_category"]
-                    is_heavy = cat in ["Large Bus", "Medium Truck/2-Axle Truck", "Truck", "Bus"]
+                    is_heavy = cat in HEAVY_CATEGORIES
 
                     min_travel = 18.0 if is_heavy else 10.0
                     min_frames = 5 if is_heavy else 3
@@ -440,7 +445,7 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                             # Prevent ByteTrack ID flickering & class switching from double-counting Large Buses
                             is_duplicate = False
                             for r_cat, r_x, r_y, r_f in recent_counted_vehicles:
-                                r_is_heavy = r_cat in ["Large Bus", "Medium Truck/2-Axle Truck", "Truck", "Bus"]
+                                r_is_heavy = r_cat in HEAVY_CATEGORIES
                                 cat_match = (r_cat == cat) or (is_heavy and r_is_heavy)
 
                                 max_frames = 120 if is_heavy else 75
