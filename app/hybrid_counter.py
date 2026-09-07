@@ -14,9 +14,9 @@ COCO_MODEL_PATH = os.path.join(BASE_DIR, "models", "yolov8n.pt")
 COCO_TO_SURVEY = {
     "bicycle": "Bicycle",
     "motorcycle": "Motorcycle",
-    "car": "Sedan / Private Car",
-    "bus": "Bus / Mini Bus",
-    "truck": "Truck (Heavy & Medium)",
+    "car": "Car",
+    "bus": "Bus",
+    "truck": "Truck",
 }
 
 # BNVD (Bangladeshi Native Vehicle Dataset) YOLOv8 — trained specifically on
@@ -25,21 +25,21 @@ COCO_TO_SURVEY = {
 BNVD_MODEL_PATH = os.path.join(BASE_DIR, "models", "bnvd_yolov8.pt")
 BNVD_TO_SURVEY = {
     "Bicycle": "Bicycle",
-    "Rickshaw": "Rickshaw / Van",
-    "CNG": "Three-Wheeler (CNG)",
+    "Rickshaw": "Rickshaw",
+    "CNG": "CNG",
     "Motorbike": "Motorcycle",
-    "Car": "Sedan / Private Car",
-    "MPV": "Microbus (inc. Ambulance)",
-    "Van": "Mini Truck / Covered Van",
-    "ShoppingVan": "Mini Truck / Covered Van",
-    "Pickup": "Jeep / Pickup / SUV",
-    "Bus": "Bus / Mini Bus",
-    "Truck": "Truck (Heavy & Medium)",
-    "Easybike": "Motorized Rickshaw (Easybike)",
-    "Leguna": "Human Hauler / Leguna / Tempo",
-    "Bhotbhoti": "Other / Agricultural",
-    "PowerTiller": "Other / Agricultural",
-    "Wheelbarrow": "Animal / Push Cart (Thela Gari)",
+    "Car": "Car",
+    "MPV": "Microbus",
+    "Van": "Van",
+    "ShoppingVan": "Covered Van",
+    "Pickup": "Pickup",
+    "Bus": "Bus",
+    "Truck": "Truck",
+    "Easybike": "Easybike",
+    "Leguna": "Leguna",
+    "Bhotbhoti": "Bhotbhoti",
+    "PowerTiller": "Power Tiller",
+    "Wheelbarrow": "Thela Gari",
     "Pedestrian": None,  # not a vehicle; ignored
 }
 
@@ -193,7 +193,19 @@ def run_counter_hybrid(video_source, job, min_width=None, min_height=None,
             # crossing entirely instead of mislabeling it "Other".
             return False
 
-        category = class_map.get(best_name, "Other")
+        # Separate Bus into 'Bus' (Large Bus) vs 'Mini Bus', and Truck into 'Heavy Truck' vs 'Medium Truck'
+        if str(best_name).lower() == "bus":
+            norm_dim = max(w / fw, h / fh)
+            depth_scale = max(0.2, 0.25 + 0.75 * ((y + h / 2.0) / fh))
+            norm_size = norm_dim / depth_scale
+            category = "Mini Bus" if norm_size < 0.35 else "Bus"
+        elif str(best_name).lower() == "truck":
+            norm_dim = max(w / fw, h / fh)
+            depth_scale = max(0.2, 0.25 + 0.75 * ((y + h / 2.0) / fh))
+            norm_size = norm_dim / depth_scale
+            category = "Heavy Truck" if norm_size >= 0.36 else "Medium Truck"
+        else:
+            category = class_map.get(best_name, "Other")
         categories[category] = categories.get(category, 0) + 1
         job["categories"] = dict(categories)
         return True

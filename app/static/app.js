@@ -849,6 +849,24 @@ function renderLines(lines, directionMode) {
   lineRows.innerHTML = html + activeLineCardsHtml;
 }
 
+function formatCategoryName(name) {
+  const map = {
+    "Bus / Mini Bus": "Bus",
+    "Sedan / Private Car": "Car",
+    "Microbus (inc. Ambulance)": "Microbus",
+    "Three-Wheeler (CNG)": "CNG",
+    "Jeep / Pickup / SUV": "Pickup",
+    "Motorized Rickshaw (Easybike)": "Easybike",
+    "Rickshaw / Van": "Rickshaw",
+    "Truck (Heavy & Medium)": "Truck",
+    "Mini Truck / Covered Van": "Covered Van",
+    "Human Hauler / Leguna / Tempo": "Leguna",
+    "Animal / Push Cart (Thela Gari)": "Thela Gari",
+    "Other / Agricultural": "Other",
+  };
+  return map[name] || name;
+}
+
 function renderCategories(categories) {
   const entries = Object.entries(categories || {}).sort((a, b) => b[1] - a[1]);
   if (!entries.length) {
@@ -858,7 +876,7 @@ function renderCategories(categories) {
   sideCategoriesBlock.hidden = false;
   categoryRows.innerHTML = entries.map(([name, count]) => `
     <div class="category-row">
-      <span class="category-row-name">${escapeHtml(name)}</span>
+      <span class="category-row-name">${escapeHtml(formatCategoryName(name))}</span>
       <span class="category-row-count">${count}</span>
     </div>
   `).join("");

@@ -19,9 +19,9 @@ DETECT_EVERY = 1      # run YOLO every Nth frame; other frames reuse the last kn
 COCO_TO_SURVEY = {
     "bicycle": "Bicycle",
     "motorcycle": "Motorcycle",
-    "car": "Sedan / Private Car",
-    "bus": "Bus / Mini Bus",
-    "truck": "Truck (Heavy & Medium)",
+    "car": "Car",
+    "bus": "Bus",
+    "truck": "Truck",
 }
 VEHICLE_CLASSES = set(COCO_TO_SURVEY.keys())
 
@@ -120,8 +120,22 @@ def run_counter_yolo(video_source, job, lines=None, conf_threshold=CONF_THRESHOL
                 if conf < conf_threshold:
                     continue
                 x1, y1, x2, y2 = (int(v) for v in box.xyxy[0].tolist())
-                category = COCO_TO_SURVEY.get(name, "Other")
-                detections.append((x1, y1, x2 - x1, y2 - y1, category, conf))
+                bw = x2 - x1
+                bh = y2 - y1
+                cy = (y1 + y2) / 2.0
+                if name == "bus":
+                    norm_dim = max(bw / frame_w, bh / frame_h)
+                    depth_scale = max(0.2, 0.25 + 0.75 * (cy / frame_h))
+                    norm_size = norm_dim / depth_scale
+                    category = "Mini Bus" if norm_size < 0.35 else "Bus"
+                elif name == "truck":
+                    norm_dim = max(bw / frame_w, bh / frame_h)
+                    depth_scale = max(0.2, 0.25 + 0.75 * (cy / frame_h))
+                    norm_size = norm_dim / depth_scale
+                    category = "Heavy Truck" if norm_size >= 0.36 else "Medium Truck"
+                else:
+                    category = COCO_TO_SURVEY.get(name, "Other")
+                detections.append((x1, y1, bw, bh, category, conf))
             last_detections = detections
         else:
             # Skipped frame: reuse the last detected boxes so tracks stay alive

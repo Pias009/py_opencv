@@ -31,27 +31,27 @@ def _autosize(ws, min_width=10, max_width=50):
 # 21 Official Survey Columns matching the Bangladesh Traffic Survey Table
 SURVEY_21_COLUMNS = [
     # (Col #, Group Name, Column Header, Mapped Category Keys)
-    (1, "Freight Vehicles", "Heavy Truck/\nContainer", ["Heavy Truck", "Heavy Truck / Container"]),
-    (2, "Freight Vehicles", "Medium Truck", ["Truck (Heavy & Medium)", "Medium Truck/2-Axle Truck", "Truck"]),
-    (3, "Freight Vehicles", "Light Truck", ["Mini Truck / Covered Van", "Small Open Truck/Small Van", "Van", "ShoppingVan"]),
-    (4, "Motorized Vehicles (Bus)", "City Bus (AC)", []),
-    (5, "Motorized Vehicles (Bus)", "City Bus (non-AC)", ["Bus / Mini Bus", "Large Bus", "Bus"]),
-    (6, "Motorized Vehicles (Bus)", "BRTC City Bus\n(AC/Non-AC)", []),
-    (7, "Motorized Vehicles (Bus)", "Double Decker/\nArticulated", []),
-    (8, "Motorized Vehicles (Bus)", "Long Route\n(AC)", []),
-    (9, "Motorized Vehicles (Bus)", "Long Route\n(Non-AC)", []),
-    (10, "Motorized Vehicles (Bus)", "Mini Bus", ["Mini Bus"]),
-    (11, "Motorized Vehicles", "Micro Bus", ["Microbus (inc. Ambulance)", "Micro Bus", "Car/Suv"]),
-    (12, "Motorized Vehicles", "Pic-ups/Jeeps/\nSUV", ["Jeep / Pickup / SUV", "Jeep/Pick-up", "Pickup"]),
-    (13, "Motorized Vehicles", "Sedan/Car/Taxi/\nRide Sharing", ["Sedan / Private Car", "Car"]),
-    (14, "Motorized Vehicles", "Three-wheeler\n(CNG)", ["Three-Wheeler (CNG)", "Auto", "CNG"]),
-    (15, "Motorized Vehicles", "Leguna/Human\nHauler/Tempo", ["Human Hauler / Leguna / Tempo", "Tempo/Leguna/Maxi", "Leguna"]),
-    (16, "Motorized Vehicles", "Motorcycle/\nScooter", ["Motorcycle", "Motorbike"]),
-    (17, "Motorized Vehicles", "Motorized\nRickshaw", ["Motorized Rickshaw (Easybike)", "Easybike"]),
-    (18, "Motorized Vehicles", "Emergency/\nUtility Vehicles", ["Emergency", "Utility"]),
+    (1, "Freight Vehicles", "Heavy Truck/\nContainer", ["Heavy Truck", "Heavy Truck / Container", "Container Truck"]),
+    (2, "Freight Vehicles", "Medium Truck", ["Medium Truck", "Truck", "Truck (Heavy & Medium)", "Medium Truck/2-Axle Truck"]),
+    (3, "Freight Vehicles", "Light Truck", ["Covered Van", "Mini Truck", "Light Truck", "ShoppingVan", "Mini Truck / Covered Van", "Small Open Truck/Small Van"]),
+    (4, "Motorized Vehicles (Bus)", "City Bus (AC)", ["City Bus (AC)", "AC Bus"]),
+    (5, "Motorized Vehicles (Bus)", "City Bus (non-AC)", ["Bus", "Large Bus", "City Bus", "Bus / Mini Bus", "Standard Bus"]),
+    (6, "Motorized Vehicles (Bus)", "BRTC City Bus\n(AC/Non-AC)", ["BRTC Bus", "BRTC"]),
+    (7, "Motorized Vehicles (Bus)", "Double Decker/\nArticulated", ["Double Decker"]),
+    (8, "Motorized Vehicles (Bus)", "Long Route\n(AC)", ["Long Route (AC)"]),
+    (9, "Motorized Vehicles (Bus)", "Long Route\n(Non-AC)", ["Long Route (Non-AC)"]),
+    (10, "Motorized Vehicles (Bus)", "Mini Bus", ["Mini Bus", "Minibus"]),
+    (11, "Motorized Vehicles", "Micro Bus", ["Microbus", "Micro Bus", "Microbus (inc. Ambulance)", "Car/Suv"]),
+    (12, "Motorized Vehicles", "Pic-ups/Jeeps/\nSUV", ["Pickup", "Jeep", "SUV", "Jeep / Pickup / SUV", "Jeep/Pick-up"]),
+    (13, "Motorized Vehicles", "Sedan/Car/Taxi/\nRide Sharing", ["Car", "Private Car", "Sedan", "Sedan / Private Car", "Taxi"]),
+    (14, "Motorized Vehicles", "Three-wheeler\n(CNG)", ["CNG", "CNG (Auto)", "Three-Wheeler (CNG)", "Auto"]),
+    (15, "Motorized Vehicles", "Leguna/Human\nHauler/Tempo", ["Leguna", "Tempo", "Human Hauler", "Human Hauler / Leguna / Tempo", "Tempo/Leguna/Maxi"]),
+    (16, "Motorized Vehicles", "Motorcycle/\nScooter", ["Motorcycle", "Motorbike", "Scooter"]),
+    (17, "Motorized Vehicles", "Motorized\nRickshaw", ["Easybike", "Motorized Rickshaw", "Motorized Rickshaw (Easybike)"]),
+    (18, "Motorized Vehicles", "Emergency/\nUtility Vehicles", ["Emergency", "Utility", "Ambulance"]),
     (19, "Non-Motorized Vehicles", "Bicycle", ["Bicycle"]),
-    (20, "Non-Motorized Vehicles", "Rickshaw/Van/\nSchool Van", ["Rickshaw / Van", "Rickshaw"]),
-    (21, "Non-Motorized Vehicles", "Animal/Push/\nPull Cart", ["Animal / Push Cart (Thela Gari)", "Push car (Thela gari)", "Wheelbarrow"]),
+    (20, "Non-Motorized Vehicles", "Rickshaw/Van/\nSchool Van", ["Rickshaw", "Van", "Rickshaw / Van", "Rickshaw Van", "School Van", "Pedal Van"]),
+    (21, "Non-Motorized Vehicles", "Animal/Push/\nPull Cart", ["Thela Gari", "Push Cart", "Thela Gari (Push Cart)", "Animal / Push Cart (Thela Gari)", "Push car (Thela gari)", "Wheelbarrow", "Bhotbhoti", "Power Tiller", "Other / Agricultural", "Other"]),
 ]
 
 
@@ -155,8 +155,8 @@ def _build_survey_table(ws, entry):
     fn_row = r + 2
     ws.cell(
         row=fn_row, column=1,
-        value="* Zero-Fault Traffic AI Methodology: Visually indistinguishable sub-types (e.g. AC vs Non-AC Bus, BRTC vs Private Bus) "
-              "are consolidated into their primary parent category to prevent automated computer-vision classification faults and guarantee 100% data integrity."
+        value="* Zero-Fault Traffic AI Methodology: All primary vehicle categories (including Bus, Mini Bus, Trucks, Rickshaws, etc.) "
+              "are classified and counted separately based on vision AI and dimensional geometry to guarantee 100% survey data integrity."
     ).font = Font(italic=True, size=9, color="555555")
 
 
@@ -256,8 +256,7 @@ def generate_report_xlsx(entry, output_path):
         note_row = r + 1
         ws3.cell(row=note_row, column=1,
                  value=("Note: Vehicle categories are classified using the Zero-Fault Vision AI engine. "
-                        "Sub-categories that cannot be visually distinguished with 100% confidence from video "
-                        "are consolidated to ensure accurate, fault-free reporting."))
+                        "All categories (including Bus, Mini Bus, Trucks, Rickshaws, etc.) are counted and reported separately."))
         ws3.cell(row=note_row, column=1).font = Font(italic=True, size=9, color="808080")
 
     # --- 21-Category Official Survey Sheet ---

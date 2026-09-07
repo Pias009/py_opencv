@@ -13,34 +13,34 @@ COCO_MODEL_PATH = os.path.join(BASE_DIR, "models", "yolov8n.pt")
 
 BNVD_TO_SURVEY = {
     "Bicycle": "Bicycle",
-    "Rickshaw": "Rickshaw / Van",
-    "CNG": "Three-Wheeler (CNG)",
+    "Rickshaw": "Rickshaw",
+    "CNG": "CNG",
     "Motorbike": "Motorcycle",
-    "Car": "Sedan / Private Car",
-    "MPV": "Microbus (inc. Ambulance)",
-    "Van": "Mini Truck / Covered Van",
-    "ShoppingVan": "Mini Truck / Covered Van",
-    "Pickup": "Jeep / Pickup / SUV",
-    "Bus": "Bus / Mini Bus",
-    "Truck": "Truck (Heavy & Medium)",
-    "Easybike": "Motorized Rickshaw (Easybike)",
-    "Leguna": "Human Hauler / Leguna / Tempo",
-    "Bhotbhoti": "Other / Agricultural",
-    "PowerTiller": "Other / Agricultural",
-    "Wheelbarrow": "Animal / Push Cart (Thela Gari)",
+    "Car": "Car",
+    "MPV": "Microbus",
+    "Van": "Van",
+    "ShoppingVan": "Covered Van",
+    "Pickup": "Pickup",
+    "Bus": "Bus",
+    "Truck": "Truck",
+    "Easybike": "Easybike",
+    "Leguna": "Leguna",
+    "Bhotbhoti": "Bhotbhoti",
+    "PowerTiller": "Power Tiller",
+    "Wheelbarrow": "Thela Gari",
 }
 
 COCO_TO_SURVEY = {
     "bicycle": "Bicycle",
     "motorcycle": "Motorcycle",
-    "car": "Sedan / Private Car",
-    "bus": "Bus / Mini Bus",
-    "truck": "Truck (Heavy & Medium)",
+    "car": "Car",
+    "bus": "Bus",
+    "truck": "Truck",
 }
 
 HEAVY_CATEGORIES = {
-    "Bus", "Large Bus", "Bus / Mini Bus",
-    "Truck", "Medium Truck/2-Axle Truck", "Truck (Heavy & Medium)",
+    "Bus", "Large Bus", "Mini Bus", "Bus / Mini Bus",
+    "Truck", "Medium Truck", "Heavy Truck", "Medium Truck/2-Axle Truck", "Truck (Heavy & Medium)",
 }
 
 
@@ -291,19 +291,34 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
             for box, track_id, cls_id, conf in zip(boxes, track_ids, clss, confs):
                 track_id = int(track_id)
                 raw_name = model.names[int(cls_id)]
-                mapped_category = class_map.get(raw_name)
-                if mapped_category is None:
-                    for k, v in class_map.items():
-                        if k.lower() == str(raw_name).lower():
-                            mapped_category = v
-                            break
-                if mapped_category is None:
-                    # Ignore persons or pedestrians
-                    if str(raw_name).lower() in ["person", "pedestrian", "human"]:
-                        continue
-                    mapped_category = str(raw_name).capitalize()
+                bx1, by1, bx2, by2 = box
+                bw = bx2 - bx1
+                bh = by2 - by1
+                cx, cy = (bx1 + bx2) / 2.0, (by1 + by2) / 2.0
 
-                cx, cy = get_centroid(box)
+                # Separate Bus into 'Bus' (Large Bus) vs 'Mini Bus' by depth-scaled dimensional geometry
+                if str(raw_name).lower() == "bus":
+                    norm_dim = max(bw / frame_w, bh / frame_h)
+                    depth_scale = max(0.2, 0.25 + 0.75 * (cy / frame_h))
+                    norm_size = norm_dim / depth_scale
+                    mapped_category = "Mini Bus" if norm_size < 0.35 else "Bus"
+                elif str(raw_name).lower() == "truck":
+                    norm_dim = max(bw / frame_w, bh / frame_h)
+                    depth_scale = max(0.2, 0.25 + 0.75 * (cy / frame_h))
+                    norm_size = norm_dim / depth_scale
+                    mapped_category = "Heavy Truck" if norm_size >= 0.36 else "Medium Truck"
+                else:
+                    mapped_category = class_map.get(raw_name)
+                    if mapped_category is None:
+                        for k, v in class_map.items():
+                            if k.lower() == str(raw_name).lower():
+                                mapped_category = v
+                                break
+                    if mapped_category is None:
+                        # Ignore persons or pedestrians
+                        if str(raw_name).lower() in ["person", "pedestrian", "human"]:
+                            continue
+                        mapped_category = str(raw_name).capitalize()
 
                 vote_weight = float(conf)
 
