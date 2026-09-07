@@ -145,7 +145,7 @@ def auto_detect_road_corridor(video_source, frame_w, frame_h, sample_frames=45):
 
 
 def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
-                            conf_threshold=0.25, imgsz=512, vid_stride=2, frame_sink=None,
+                            conf_threshold=0.18, imgsz=640, vid_stride=2, frame_sink=None,
                             show_window=False, display_max_width=1280):
     """Zero-Fault High-Precision Vehicle Tracker, Counter, and Classifier.
 
@@ -405,68 +405,65 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
 
                     cx, cy = p_curr[0], p_curr[1]
 
-                    # Robust Spatial + Velocity Direction Determination:
-                    # Left side of road (X < 0.48 * frame_w) = OUTGOING traffic lane
-                    # Right side of road (X >= 0.48 * frame_w) = INCOMING traffic lane
-                    is_right_lane = (cx >= frame_w * 0.48)
-
-                    sample_len = min(5, len(history))
+                    # True Motion-Vector Trajectory Direction:
+                    # dy < 0: moving toward top of frame -> OUTGOING (GOING / receding)
+                    # dy > 0: moving toward bottom of frame -> INCOMING (COMING / approaching)
+                    sample_len = min(6, len(history))
                     dy_recent = history[-1][1] - history[-sample_len][1] if len(history) >= sample_len else (p_curr[1] - p_prev[1])
+                    dy_tot = history[-1][1] - history[0][1]
 
-                    # Locked direction priority:
-                    # 1. If on right lane of road -> INCOMING
-                    # 2. If dy_recent > 0 (moving down) -> INCOMING
-                    # 3. Only if on left lane AND moving UP (dy_recent < 0) -> OUTGOING
-                    if is_right_lane or dy_recent > 0.2:
-                        is_going_vehicle = False
-                        is_coming_vehicle = True
-                        tr["direction"] = "coming"
-                    elif (not is_right_lane) and dy_recent < -0.2:
+                    if dy_tot < -1.0 or (dy_tot <= 0.2 and dy_recent < -0.2):
                         is_going_vehicle = True
                         is_coming_vehicle = False
                         tr["direction"] = "going"
+                    elif dy_tot > 1.0 or (dy_tot >= -0.2 and dy_recent > 0.2):
+                        is_going_vehicle = False
+                        is_coming_vehicle = True
+                        tr["direction"] = "coming"
                     else:
-                        # Fallback for small jitter
-                        if is_right_lane:
-                            is_going_vehicle = False
-                            is_coming_vehicle = True
-                            tr["direction"] = "coming"
-                        else:
+                        bias = tr.get("entry_bias", "neutral")
+                        if bias == "going" or dy_recent <= 0:
                             is_going_vehicle = True
                             is_coming_vehicle = False
                             tr["direction"] = "going"
+                        else:
+                            is_going_vehicle = False
+                            is_coming_vehicle = True
+                            tr["direction"] = "coming"
 
                     if inverted_state:
                         is_going_vehicle, is_coming_vehicle = is_coming_vehicle, is_going_vehicle
+                        tr["direction"] = "coming" if is_coming_vehicle else "going"
 
                     disp = ((p_curr[0] - p_prev[0])**2 + (p_curr[1] - p_prev[1])**2)**0.5
 
-                    # Zone Corridor Pass-Through Check (Outgoing vehicles counted, incoming strictly rejected):
+                    # Corridor Motion Traversal Check:
                     tot_travel = ((p_curr[0] - history[0][0])**2 + (p_curr[1] - history[0][1])**2)**0.5
                     cat = tr["best_category"]
                     is_heavy = cat in HEAVY_CATEGORIES
 
-                    min_travel = 18.0 if is_heavy else 10.0
-                    min_frames = 5 if is_heavy else 3
+                    min_travel = 10.0 if is_heavy else 6.0
+                    min_frames = 3 if is_heavy else 2
 
                     if tot_travel >= min_travel and len(history) >= min_frames:
-                        # STRICT DIRECTION GATE:
+                        # Direction gate:
                         if (not enable_in) and is_coming_vehicle:
-                            pass  # Strictly REJECT incoming vehicles on right lane
+                            pass  # Skip incoming when disabled
                         elif (not enable_out) and is_going_vehicle:
-                            pass  # Strictly REJECT outgoing vehicles
+                            pass  # Skip outgoing when disabled
                         else:
-                            # --- Spatial/Temporal Re-Identification De-Duplication ---
-                            # Prevent ByteTrack ID flickering & class switching from double-counting Large Buses
+                            # --- Spatial/Temporal Track Glitch De-Duplication ---
+                            # Only deduplicate immediate ByteTrack track-swap glitches on the exact same physical vehicle.
+                            # Never discard legitimate following vehicles in traffic (which arrive > 1 sec later).
                             is_duplicate = False
                             for r_cat, r_x, r_y, r_f in recent_counted_vehicles:
                                 r_is_heavy = r_cat in HEAVY_CATEGORIES
                                 cat_match = (r_cat == cat) or (is_heavy and r_is_heavy)
 
-                                max_frames = 120 if is_heavy else 75
+                                max_frames = 20 if is_heavy else 15
+                                max_dist = 50.0 if is_heavy else 35.0
                                 if cat_match and (frame_idx - r_f) <= max_frames:
                                     dist_recent = ((cx - r_x)**2 + (cy - r_y)**2)**0.5
-                                    max_dist = 180.0 if is_heavy else 110.0
                                     if dist_recent <= max_dist:
                                         is_duplicate = True
                                         break

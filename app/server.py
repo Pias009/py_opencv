@@ -321,7 +321,7 @@ def job_worker(job_id, video_path, source_label):
 
         from zero_fault_counter import run_zero_fault_counter
         run_zero_fault_counter(video_path, job, lines=lines, model_key="bnvd",
-                               conf_threshold=0.25, imgsz=640, vid_stride=vid_stride,
+                               conf_threshold=0.18, imgsz=640, vid_stride=vid_stride,
                                frame_sink=frame_sink)
     except Exception as e:
         job["status"] = "error"
@@ -475,7 +475,7 @@ def api_start():
 
     line_mode = request.form.get("line_mode", "box")
     invert_direction = request.form.get("invert", "false").lower() == "true"
-    enable_in = request.form.get("enable_in", "false").lower() == "true"
+    enable_in = request.form.get("enable_in", "true").lower() == "true"
     enable_out = request.form.get("enable_out", "true").lower() == "true"
     count_scope_mode = request.form.get("count_scope_mode", "active_only")
     direction_mode = request.form.get("direction_mode", "IN_OUT")
