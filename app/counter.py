@@ -77,6 +77,17 @@ def vertical_line(frame_w, frame_h, pct=0.5):
     return [CountingLine("Line1", x, 25, x, frame_h - 25)]
 
 
+def dual_gate_lines(frame_w, frame_h, spacing_pct=0.18):
+    """Dual-Gate Virtual Trap: Gate A (Upper) and Gate B (Lower) across the active road."""
+    y1 = int(frame_h * (0.50 - spacing_pct / 2))
+    y2 = int(frame_h * (0.50 + spacing_pct / 2))
+    margin = int(frame_w * 0.04)
+    return [
+        CountingLine("Gate A (Upper)", margin, y1, frame_w - margin, y1),
+        CountingLine("Gate B (Lower)", margin, y2, frame_w - margin, y2),
+    ]
+
+
 def box_lines(frame_w, frame_h, margin=15, scale=0.52):
     """Four lines forming a boundary box centered in the frame (North/South/
     West/East), sized at `scale` fraction of the frame's width/height, so all four

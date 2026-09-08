@@ -311,13 +311,16 @@ def job_worker(job_id, video_path, source_label):
 
         if line_mode == "horizontal":
             lines = default_lines(frame_w, frame_h)
+        elif line_mode == "dual_gate":
+            from counter import dual_gate_lines
+            lines = dual_gate_lines(frame_w, frame_h)
         elif line_mode == "vertical":
             lines = vertical_line(frame_w, frame_h, pct=0.5)
         elif line_mode == "auto":
             from zero_fault_counter import auto_detect_road_corridor
             lines = auto_detect_road_corridor(video_path, frame_w, frame_h)
         else:
-            lines = box_lines(frame_w, frame_h, margin=40)
+            lines = box_lines(frame_w, frame_h, margin=15)
 
         from zero_fault_counter import run_zero_fault_counter
         run_zero_fault_counter(video_path, job, lines=lines, model_key="bnvd",
