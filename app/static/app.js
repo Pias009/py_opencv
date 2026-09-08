@@ -1078,11 +1078,16 @@ function openConfirmModal() {
   const directionRadio = document.querySelector('input[name="direction_mode"]:checked');
   const activeLines = Array.from(document.querySelectorAll(".line-check:checked")).map(c => c.value);
 
-  const speedMap = { "1": "1x Normal Speed (100%)", "2": "2x Fast-Forward (200%)", "3": "3x Ultra Fast (300%)" };
-  const modeMap = { "box": "4-Way Intersection Box", "horizontal": "Single Horizontal Line", "vertical": "Vertical Boundary Line" };
+  const modeMap = {
+    "smart_flow": "✨ Smart Trajectory Flow (Zero Miss)",
+    "dual_gate": "⚡ Dual-Gate Virtual Trap",
+    "box": "4-Way Intersection Box",
+    "horizontal": "Single Horizontal Line",
+    "vertical": "Vertical Boundary Line"
+  };
   const termMap = { "IN_OUT": "IN / OUT", "COMING_GOING": "COMING / GOING", "FORWARD_BACKWARD": "FORWARD / BACKWARD" };
 
-  const modeText = modeMap[lineModeSelect ? lineModeSelect.value : "box"] || "4-Way Intersection Box";
+  const modeText = modeMap[lineModeSelect ? lineModeSelect.value : "smart_flow"] || "✨ Smart Trajectory Flow (Zero Miss)";
   const speedText = speedMap[speedSelect ? speedSelect.value : "2"] || "2x Fast-Forward";
   const namingText = termMap[directionRadio ? directionRadio.value : "IN_OUT"] || "IN / OUT";
 

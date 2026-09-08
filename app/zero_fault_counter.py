@@ -188,27 +188,39 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
     frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
+    line_mode = job.get("line_mode", "smart_flow")
+    is_smart_flow = (line_mode in ("smart_flow", "auto", "corridor", None)) or (lines and len(lines) == 1 and "Traffic Flow" in lines[0].name)
+
     if not lines:
-        lines = box_lines(frame_w, frame_h, margin=40)
+        if is_smart_flow:
+            lines = [CountingLine("Traffic Flow", 0, int(frame_h * 0.35), frame_w, int(frame_h * 0.35))]
+        else:
+            lines = box_lines(frame_w, frame_h, margin=40)
 
     # Apply initial direction inversion if requested
     if job.get("invert_direction"):
         for ln in lines:
             ln.nx, ln.ny = -ln.nx, -ln.ny
 
-    # Grab the very first camera frame, draw lines and push to frame_sink immediately!
-    # User sees camera feed & counting lines within 100ms instead of a blank box.
+    # Grab the very first camera frame, draw flow indicator/lines and push to frame_sink immediately!
+    # User sees camera feed & active counting zone within 100ms instead of a blank box.
     if frame_sink is not None:
         try:
             ret_init, frame_init = cap.read()
             if ret_init and frame_init is not None:
                 preview = frame_init.copy()
-                for ln in lines:
-                    cv2.line(preview, (ln.x1, ln.y1), (ln.x2, ln.y2), (0, 255, 60), 3)
-                    cv2.putText(preview, ln.name, (ln.x1 + 6, ln.y1 - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.60, (0, 255, 60), 2)
-                cv2.putText(preview, "STARTING AI TRACKING...", (25, 45),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.85, (0, 230, 80), 2)
+                if is_smart_flow:
+                    road_y = int(frame_h * 0.35)
+                    cv2.line(preview, (10, road_y), (frame_w - 10, road_y), (0, 230, 80), 2)
+                    cv2.putText(preview, "SMART TRAJECTORY FLOW (ZERO MISS - NO LINE TOUCH REQUIRED)", (25, 45),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 230, 80), 2)
+                else:
+                    for ln in lines:
+                        cv2.line(preview, (ln.x1, ln.y1), (ln.x2, ln.y2), (0, 255, 60), 3)
+                        cv2.putText(preview, ln.name, (ln.x1 + 6, ln.y1 - 10),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.60, (0, 255, 60), 2)
+                    cv2.putText(preview, "STARTING AI TRACKING...", (25, 45),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.85, (0, 230, 80), 2)
                 ok, jpeg_init = cv2.imencode(".jpg", preview, [cv2.IMWRITE_JPEG_QUALITY, 70])
                 if ok:
                     frame_sink(jpeg_init.tobytes())
@@ -283,31 +295,38 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
         frame_idx += vid_stride
         frame = result.orig_img.copy() if needs_vis else None
 
-        # Draw line boundaries
+        # Draw line boundaries or active road flow zone
         if needs_vis:
-            for i, ln in enumerate(lines):
-                clean_name = ln.name.replace(" Line", "").strip()
-                is_active_ln = True
-                if enabled_lines is not None and len(enabled_lines) > 0:
-                    if clean_name not in enabled_lines and ln.name not in enabled_lines and len(lines) > 1:
-                        is_active_ln = False
+            if is_smart_flow:
+                road_y = int(frame_h * 0.35)
+                # Draw sleek active road flow indicator
+                cv2.line(frame, (10, road_y), (frame_w - 10, road_y), (0, 230, 80), 2)
+                cv2.putText(frame, "ACTIVE ROAD FLOW COUNTING ZONE (ALL LANES)", (18, road_y - 8),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 230, 80), 2)
+            else:
+                for i, ln in enumerate(lines):
+                    clean_name = ln.name.replace(" Line", "").strip()
+                    is_active_ln = True
+                    if enabled_lines is not None and len(enabled_lines) > 0:
+                        if clean_name not in enabled_lines and ln.name not in enabled_lines and len(lines) > 1:
+                            is_active_ln = False
 
-                if is_active_ln:
-                    # Active counting line → bright green, thick
-                    ln_color = (0, 255, 60)
-                    ln_thick = 4
-                    cv2.line(frame, (ln.x1, ln.y1), (ln.x2, ln.y2), ln_color, ln_thick)
-                    # Glow effect: draw slightly transparent wider line underneath
-                    cv2.line(frame, (ln.x1, ln.y1), (ln.x2, ln.y2), (0, 180, 40), 8)
-                    cv2.line(frame, (ln.x1, ln.y1), (ln.x2, ln.y2), ln_color, ln_thick)
-                    count_txt = f"{ln.name}  OUT:{ln.out_count}  IN:{ln.in_count}"
-                    cv2.putText(frame, count_txt, (ln.x1 + 6, ln.y1 - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.62, ln_color, 2)
-                else:
-                    # Inactive line → dim gray
-                    cv2.line(frame, (ln.x1, ln.y1), (ln.x2, ln.y2), (90, 90, 90), 2)
-                    cv2.putText(frame, f"{ln.name} (OFF)", (ln.x1 + 6, ln.y1 - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.50, (90, 90, 90), 1)
+                    if is_active_ln:
+                        # Active counting line → bright green, thick
+                        ln_color = (0, 255, 60)
+                        ln_thick = 4
+                        cv2.line(frame, (ln.x1, ln.y1), (ln.x2, ln.y2), ln_color, ln_thick)
+                        # Glow effect: draw slightly transparent wider line underneath
+                        cv2.line(frame, (ln.x1, ln.y1), (ln.x2, ln.y2), (0, 180, 40), 8)
+                        cv2.line(frame, (ln.x1, ln.y1), (ln.x2, ln.y2), ln_color, ln_thick)
+                        count_txt = f"{ln.name}  OUT:{ln.out_count}  IN:{ln.in_count}"
+                        cv2.putText(frame, count_txt, (ln.x1 + 6, ln.y1 - 10),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.62, ln_color, 2)
+                    else:
+                        # Inactive line → dim gray
+                        cv2.line(frame, (ln.x1, ln.y1), (ln.x2, ln.y2), (90, 90, 90), 2)
+                        cv2.putText(frame, f"{ln.name} (OFF)", (ln.x1 + 6, ln.y1 - 10),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.50, (90, 90, 90), 1)
 
         # Process detections with persistent track IDs
         if result.boxes is not None and result.boxes.id is not None:
@@ -483,51 +502,20 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                         elif (not enable_out) and is_going_vehicle:
                             pass  # Skip outgoing when disabled
                         else:
-                            # Check crossing against each line
-                            for ln in lines:
-                                if tr.get("globally_counted"):
-                                    break
+                            if is_smart_flow:
+                                # ── SMART TRAJECTORY FLOW ENGINE (Zero Miss, No Line Touch Required) ──
+                                # 1. Road corridor check: y >= 0.20 * frame_h (covers all drivable road, filters sky/clouds)
+                                in_road_corridor = (cy >= frame_h * 0.20)
 
-                                clean_name = ln.name.replace(" Line", "").strip()
-                                # Skip lines disabled by user in UI
-                                if enabled_lines is not None and len(enabled_lines) > 0:
-                                    if clean_name not in enabled_lines and ln.name not in enabled_lines and len(lines) > 1:
-                                        continue
-                                if is_going_vehicle and enabled_lines_out is not None and len(enabled_lines_out) > 0:
-                                    if clean_name not in enabled_lines_out and ln.name not in enabled_lines_out and len(lines) > 1:
-                                        continue
-                                if is_coming_vehicle and enabled_lines_in is not None and len(enabled_lines_in) > 0:
-                                    if clean_name not in enabled_lines_in and ln.name not in enabled_lines_in and len(lines) > 1:
-                                        continue
-
-                                # 1. Raycast segment intersection
-                                crossed = segments_intersect(p_prev, p_curr, (ln.x1, ln.y1), (ln.x2, ln.y2))
-
-                                # 2. Signed side change across line
-                                side_p = ln.signed_side(p_prev[0], p_prev[1])
-                                side_c = ln.signed_side(p_curr[0], p_curr[1])
-                                if (side_p * side_c < 0) and ln.distance_to_segment(cx, cy) <= 65:
-                                    crossed = True
-
-                                # 3. High-speed multi-frame leap check under frame stride
-                                if len(history) >= 4:
-                                    side_old = ln.signed_side(history[-3][0], history[-3][1])
-                                    if (side_old * side_c < 0) and ln.distance_to_segment(cx, cy) <= 75:
-                                        crossed = True
-
-                                # 4. Bounding box edge crossing
-                                if not crossed and box_intersects_segment(box, (ln.x1, ln.y1), (ln.x2, ln.y2)) and ln.distance_to_segment(cx, cy) <= 50:
-                                    crossed = True
-
-                                if crossed:
-                                    # Deduplication check against recently counted tracks
+                                if in_road_corridor:
+                                    # Deduplication check against recently counted tracks (prevents double counts on ID switch / occlusion)
                                     is_duplicate = False
                                     for r_ev in recent_counted_vehicles:
                                         if (frame_idx - r_ev["frame"]) <= 90:
                                             d = ((cx - r_ev["cx"])**2 + (cy - r_ev["cy"])**2)**0.5
                                             same_cat = (r_ev["cat"] == cat) or (r_ev["cat"] in HEAVY_CATEGORIES and cat in HEAVY_CATEGORIES) or (r_ev["cat"] in ["Car", "Microbus"] and cat in ["Car", "Microbus"])
                                             if same_cat:
-                                                if d < 180 or (r_ev["dir"] == tr["direction"] and d < 220):
+                                                if d < 140 or (r_ev.get("dir") == tr["direction"] and d < 190):
                                                     is_duplicate = True
                                                     break
 
@@ -535,22 +523,91 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                                         tr["globally_counted"] = True
                                     else:
                                         tr["globally_counted"] = True
-                                        tr["counted_lines"].add(ln.name)
-                                        if is_going_vehicle:
-                                            ln.out_count += 1
-                                        else:
-                                            ln.in_count += 1
+                                        target_ln = lines[0] if lines else None
+                                        if target_ln:
+                                            tr["counted_lines"].add(target_ln.name)
+                                            if is_going_vehicle:
+                                                target_ln.out_count += 1
+                                            else:
+                                                target_ln.in_count += 1
 
                                         categories_summary[cat] = categories_summary.get(cat, 0) + 1
                                         recent_counted_vehicles.append({
                                             "tid": track_id, "cat": cat, "cx": cx, "cy": cy,
                                             "frame": frame_idx, "dir": tr["direction"], "box": box
                                         })
-                                        if len(recent_counted_vehicles) > 200:
+                                        if len(recent_counted_vehicles) > 250:
                                             recent_counted_vehicles.pop(0)
+                            else:
+                                # ── TRADITIONAL LINE-CROSSING MODE ──
+                                # Check crossing against each line
+                                for ln in lines:
+                                    if tr.get("globally_counted"):
+                                        break
 
-                                        if needs_vis:
-                                            cv2.line(frame, (ln.x1, ln.y1), (ln.x2, ln.y2), (0, 255, 0), 5)
+                                    clean_name = ln.name.replace(" Line", "").strip()
+                                    # Skip lines disabled by user in UI
+                                    if enabled_lines is not None and len(enabled_lines) > 0:
+                                        if clean_name not in enabled_lines and ln.name not in enabled_lines and len(lines) > 1:
+                                            continue
+                                    if is_going_vehicle and enabled_lines_out is not None and len(enabled_lines_out) > 0:
+                                        if clean_name not in enabled_lines_out and ln.name not in enabled_lines_out and len(lines) > 1:
+                                            continue
+                                    if is_coming_vehicle and enabled_lines_in is not None and len(enabled_lines_in) > 0:
+                                        if clean_name not in enabled_lines_in and ln.name not in enabled_lines_in and len(lines) > 1:
+                                            continue
+
+                                    # 1. Raycast segment intersection
+                                    crossed = segments_intersect(p_prev, p_curr, (ln.x1, ln.y1), (ln.x2, ln.y2))
+
+                                    # 2. Signed side change across line
+                                    side_p = ln.signed_side(p_prev[0], p_prev[1])
+                                    side_c = ln.signed_side(p_curr[0], p_curr[1])
+                                    if (side_p * side_c < 0) and ln.distance_to_segment(cx, cy) <= 65:
+                                        crossed = True
+
+                                    # 3. High-speed multi-frame leap check under frame stride
+                                    if len(history) >= 4:
+                                        side_old = ln.signed_side(history[-3][0], history[-3][1])
+                                        if (side_old * side_c < 0) and ln.distance_to_segment(cx, cy) <= 75:
+                                            crossed = True
+
+                                    # 4. Bounding box edge crossing
+                                    if not crossed and box_intersects_segment(box, (ln.x1, ln.y1), (ln.x2, ln.y2)) and ln.distance_to_segment(cx, cy) <= 50:
+                                        crossed = True
+
+                                    if crossed:
+                                        # Deduplication check against recently counted tracks
+                                        is_duplicate = False
+                                        for r_ev in recent_counted_vehicles:
+                                            if (frame_idx - r_ev["frame"]) <= 90:
+                                                d = ((cx - r_ev["cx"])**2 + (cy - r_ev["cy"])**2)**0.5
+                                                same_cat = (r_ev["cat"] == cat) or (r_ev["cat"] in HEAVY_CATEGORIES and cat in HEAVY_CATEGORIES) or (r_ev["cat"] in ["Car", "Microbus"] and cat in ["Car", "Microbus"])
+                                                if same_cat:
+                                                    if d < 180 or (r_ev["dir"] == tr["direction"] and d < 220):
+                                                        is_duplicate = True
+                                                        break
+
+                                        if is_duplicate:
+                                            tr["globally_counted"] = True
+                                        else:
+                                            tr["globally_counted"] = True
+                                            tr["counted_lines"].add(ln.name)
+                                            if is_going_vehicle:
+                                                ln.out_count += 1
+                                            else:
+                                                ln.in_count += 1
+
+                                            categories_summary[cat] = categories_summary.get(cat, 0) + 1
+                                            recent_counted_vehicles.append({
+                                                "tid": track_id, "cat": cat, "cx": cx, "cy": cy,
+                                                "frame": frame_idx, "dir": tr["direction"], "box": box
+                                            })
+                                            if len(recent_counted_vehicles) > 200:
+                                                recent_counted_vehicles.pop(0)
+
+                                            if needs_vis:
+                                                cv2.line(frame, (ln.x1, ln.y1), (ln.x2, ln.y2), (0, 255, 0), 5)
 
                 if needs_vis:
                     # ── Direction labeling and Box Color Engine ──

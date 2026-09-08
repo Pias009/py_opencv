@@ -310,7 +310,10 @@ def job_worker(job_id, video_path, source_label):
         frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         cap.release()
 
-        if line_mode == "horizontal":
+        from counter import CountingLine
+        if line_mode == "smart_flow":
+            lines = [CountingLine("Traffic Flow", 0, int(frame_h * 0.35), frame_w, int(frame_h * 0.35))]
+        elif line_mode == "horizontal":
             lines = default_lines(frame_w, frame_h)
         elif line_mode == "dual_gate":
             from counter import dual_gate_lines
@@ -318,10 +321,9 @@ def job_worker(job_id, video_path, source_label):
         elif line_mode == "vertical":
             lines = vertical_line(frame_w, frame_h, pct=0.5)
         elif line_mode == "auto":
-            from zero_fault_counter import auto_detect_road_corridor
-            lines = auto_detect_road_corridor(video_path, frame_w, frame_h)
+            lines = [CountingLine("Traffic Flow", 0, int(frame_h * 0.35), frame_w, int(frame_h * 0.35))]
         else:
-            lines = box_lines(frame_w, frame_h, margin=15)
+            lines = [CountingLine("Traffic Flow", 0, int(frame_h * 0.35), frame_w, int(frame_h * 0.35))]
 
         from zero_fault_counter import run_zero_fault_counter
         run_zero_fault_counter(video_path, job, lines=lines, model_key="bnvd",
@@ -477,7 +479,7 @@ def api_start():
     except ValueError:
         vid_stride = 2
 
-    line_mode = request.form.get("line_mode", "box")
+    line_mode = request.form.get("line_mode", "smart_flow")
     invert_direction = request.form.get("invert", "false").lower() == "true"
     enable_in = request.form.get("enable_in", "true").lower() == "true"
     enable_out = request.form.get("enable_out", "true").lower() == "true"
