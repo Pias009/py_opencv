@@ -127,8 +127,11 @@ def auto_detect_road_corridor(video_source, frame_w, frame_h, sample_frames=45):
 
             xmin = max(10, xmin - 25)
             xmax = min(frame_w - 10, xmax + 25)
-            ymin = max(int(frame_h * 0.22), ymin - 25)
-            ymax = min(int(frame_h * 0.78), ymax + 25)
+            ymin = max(int(frame_h * 0.35), min(ymin - 10, int(frame_h * 0.42)))
+            ymax = min(int(frame_h * 0.65), max(ymax + 10, int(frame_h * 0.58)))
+            if ymax <= ymin + 40:
+                ymin = int(frame_h * 0.38)
+                ymax = int(frame_h * 0.62)
 
             center = ((xmin + xmax) / 2, (ymin + ymax) / 2)
             lines = [
@@ -472,20 +475,6 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                                     if clean_name not in enabled_lines_in and ln.name not in enabled_lines_in and len(lines) > 1:
                                         continue
 
-                                # Multi-line corridor gate:
-                                # Vertical: Coming enters North (skip South exit); Going enters South (skip North exit)
-                                if not is_horizontal_corridor:
-                                    if is_coming_vehicle and "south" in ln.name.lower():
-                                        continue
-                                    if is_going_vehicle and "north" in ln.name.lower():
-                                        continue
-                                else:
-                                    # Horizontal: Coming (W->E) enters West (skip East exit); Going (E->W) enters East (skip West exit)
-                                    if is_coming_vehicle and "east" in ln.name.lower():
-                                        continue
-                                    if is_going_vehicle and "west" in ln.name.lower():
-                                        continue
-
                                 # 1. Raycast segment intersection
                                 crossed = segments_intersect(p_prev, p_curr, (ln.x1, ln.y1), (ln.x2, ln.y2))
 
@@ -632,45 +621,17 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                 del track_data[k]
 
         if needs_vis:
-            # ─── Zone Divider Line ───────────────────────────────────────────
-            # Horizontal mid-line divides GOING (top) from COMING (bottom) zones
-            mid_y = frame_h // 2
-            divider_color_going  = (0, 230, 80)    # bright green  → GOING zone top
-            divider_color_coming = (60, 120, 255)  # bright blue   → COMING zone bottom
-
-            # Solid thick divider
-            cv2.line(frame, (0, mid_y), (frame_w, mid_y), (255, 255, 255), 1)
-            # Left bracket ticks
-            cv2.line(frame, (0, 0),      (0, mid_y),      divider_color_going,  3)
-            cv2.line(frame, (0, mid_y),  (0, frame_h),    divider_color_coming, 3)
-            # Right bracket ticks
-            cv2.line(frame, (frame_w - 3, 0),     (frame_w - 3, mid_y),   divider_color_going,  3)
-            cv2.line(frame, (frame_w - 3, mid_y), (frame_w - 3, frame_h), divider_color_coming, 3)
-
-            # GOING zone label (top-right, green)
-            going_active  = enable_out
-            coming_active = enable_in
-
-            going_label  = "GOING ZONE (COUNTING)" if going_active  else "GOING ZONE (OFF)"
-            coming_label = "COMING ZONE (COUNTING)" if coming_active else "COMING ZONE (OFF)"
-
-            cv2.rectangle(frame, (frame_w - 320, 8),  (frame_w - 2, 38),      (0, 0, 0), -1)
-            cv2.putText(frame, going_label,  (frame_w - 314, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.62, divider_color_going,  2)
-
-            cv2.rectangle(frame, (frame_w - 340, mid_y + 8), (frame_w - 2, mid_y + 38), (0, 0, 0), -1)
-            cv2.putText(frame, coming_label, (frame_w - 334, mid_y + 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.62, divider_color_coming, 2)
-
             # ─── Stats Overlay (bottom-left) ────────────────────────────────
             overlay_lines = [
                 (f"TOTAL COUNTED: {total_count}", (0, 255, 80), 0.90, 2),
             ]
+            color_going = (0, 230, 80)
+            color_coming = (60, 120, 255)
             for i, ln in enumerate(lines):
                 out_lbl = f"  {ln.name}  OUT(GOING):{ln.out_count}"
                 in_lbl  = f"  {ln.name}  IN(COMING):{ln.in_count}"
-                overlay_lines.append((out_lbl, divider_color_going,  0.58, 2))
-                overlay_lines.append((in_lbl,  divider_color_coming, 0.58, 2))
+                overlay_lines.append((out_lbl, color_going,  0.58, 2))
+                overlay_lines.append((in_lbl,  color_coming, 0.58, 2))
 
             line_height = 26
             y_start = frame_h - 14 - line_height * (len(overlay_lines) - 1)
