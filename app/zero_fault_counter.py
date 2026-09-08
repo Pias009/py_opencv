@@ -88,7 +88,7 @@ def box_intersects_segment(box, A, B):
     return False
 
 
-def auto_detect_road_corridor(video_source, frame_w, frame_h, sample_frames=45):
+def auto_detect_road_corridor(video_source, frame_w, frame_h, sample_frames=20):
     """Auto-Brain Lane Snapping: Analyzes initial frame motion to infer active vehicle corridor bounds."""
     try:
         cap = cv2.VideoCapture(video_source)

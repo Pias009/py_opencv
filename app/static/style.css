@@ -1100,6 +1100,7 @@ button.stop-btn:active {
 
 #stream-img {
   width: 100%;
+  min-height: 280px;
   max-height: 520px;
   object-fit: contain;
   background: #06070a;
