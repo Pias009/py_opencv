@@ -100,7 +100,8 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
         <div id="source-file-section" class="source-panel active">
           <div class="field">
             <div id="drop-zone" class="drop-zone">
-              <p id="drop-zone-text">📁 Drag &amp; drop a video here, or click to choose a file</p>
+              <p id="drop-zone-text">📁 Drag &amp; drop a video file, click to browse, or paste a link (Ctrl+V)</p>
+              <span class="drop-zone-sub">Supports Google Drive, Dropbox, MP4, MKV, AVI, MOV</span>
               <input id="file-input" type="file" accept=".mp4,.avi,.mov,.mkv,.webm" hidden>
             </div>
           </div>
@@ -111,12 +112,20 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
           <div class="field">
             <div class="url-input-card">
               <div class="url-input-row">
-                <input type="url" id="video-url-input" class="video-url-input" placeholder="Paste Google Drive share link, Dropbox link, or direct MP4 URL…">
+                <input type="url" id="video-url-input" class="video-url-input" placeholder="Paste Google Drive share link, Dropbox link, or MP4 URL…">
+                <button type="button" id="url-paste-btn" class="url-action-btn" title="Paste link from clipboard">📋 Paste</button>
                 <button type="button" id="url-clear-btn" class="url-action-btn" title="Clear URL" style="display: none;">✕</button>
+              </div>
+              <div id="url-status-card" class="url-status-card" style="display: none;">
+                <div class="url-status-icon" id="url-status-icon">⏳</div>
+                <div class="url-status-info">
+                  <div class="url-status-title" id="url-status-title">Checking video link…</div>
+                  <div class="url-status-meta" id="url-status-meta">Connecting to cloud provider…</div>
+                </div>
               </div>
               <div class="url-provider-tags">
                 <span class="url-tag">⚡ Direct MP4 / MKV / MOV</span>
-                <span class="url-tag">☁️ Google Drive (View/Share Link)</span>
+                <span class="url-tag">☁️ Google Drive (View / Share Link)</span>
                 <span class="url-tag">📦 Dropbox Link</span>
               </div>
             </div>
@@ -460,6 +469,6 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   </div>
 </div>
 
-<script src="/static/app.js?v=13.0"></script>
+<script src="/static/app.js?v=14.0"></script>
 </body>
 </html>

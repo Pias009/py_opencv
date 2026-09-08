@@ -325,6 +325,48 @@ body {
   color: var(--text-dim);
 }
 
+/* Cloud URL Live Status Card */
+.url-status-card {
+  margin-top: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: all 0.25s ease;
+}
+.url-status-card.verified {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.4);
+}
+.url-status-card.error {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.4);
+}
+.url-status-icon {
+  font-size: 1.3rem;
+  line-height: 1;
+}
+.url-status-info {
+  flex: 1;
+  min-width: 0;
+}
+.url-status-title {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.url-status-meta {
+  font-size: 0.74rem;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
 /* Detailed Upload / Download Progress Card */
 .upload-progress-card {
   background: rgba(18, 21, 28, 0.95);
@@ -438,6 +480,14 @@ body {
 .drop-zone .file-name {
   color: var(--good);
   font-weight: 600;
+}
+.drop-zone-sub {
+  display: block;
+  font-size: 0.74rem;
+  color: var(--text-dim);
+  margin-top: 6px;
+  opacity: 0.8;
+  pointer-events: none;
 }
 
 .field-row {

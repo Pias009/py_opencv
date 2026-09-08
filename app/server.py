@@ -149,16 +149,28 @@ def clean_stale_temp_files():
 
 def resolve_direct_video_url(raw_url: str):
     """
-    Analyzes raw_url and converts Google Drive and Dropbox share links to direct downloadable streams.
+    Analyzes raw_url and converts Google Drive, Dropbox, and direct share links to direct downloadable streams.
     Returns (resolved_url, headers, is_gdrive, gdrive_file_id, suggested_filename)
     """
-    url = raw_url.strip()
+    url = raw_url.strip().strip('"\'<> \t\r\n')
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
     }
 
-    # 1. Google Drive share link
-    gdrive_match = re.search(r"drive\.google\.com\/(?:file\/d\/|open\?id=)([a-zA-Z0-9_-]+)", url)
+    # If user pasted just a raw Google Drive file ID (25-50 alphanumeric/dash/underscore chars)
+    if re.match(r"^[a-zA-Z0-9_-]{25,50}$", url) and "http" not in url and "." not in url:
+        file_id = url
+        direct_url = f"https://drive.google.com/uc?export=download&id={file_id}"
+        return direct_url, headers, True, file_id, f"gdrive_video_{file_id[:8]}.mp4"
+
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+
+    # 1. Google Drive link (matches standard /file/d/, /file/u/0/d/, /open?id=, /uc?id=, docs.google.com)
+    gdrive_match = re.search(
+        r"(?:drive\.google\.com\/(?:file\/(?:u\/\d+\/)?d\/|open\?id=|uc\?.*?id=)|docs\.google\.com\/(?:file\/(?:u\/\d+\/)?d\/)|id=|\/d\/)([a-zA-Z0-9_-]{25,})",
+        url
+    )
     if gdrive_match:
         file_id = gdrive_match.group(1)
         direct_url = f"https://drive.google.com/uc?export=download&id={file_id}"
@@ -184,6 +196,7 @@ def resolve_direct_video_url(raw_url: str):
         path_name += ".mp4"
 
     return url, headers, False, None, path_name
+
 
 
 def download_url_worker(download_id, raw_url):
@@ -351,17 +364,62 @@ def api_history():
     return jsonify(load_history())
 
 
+@app.route("/api/check_url", methods=["POST"])
+def api_check_url():
+    """Fast inspection endpoint to preview video filename & size before starting download."""
+    data = request.get_json(silent=True) or {}
+    raw_url = (data.get("url") or "").strip().strip('"\'<> \t\r\n')
+    if not raw_url:
+        return jsonify({"valid": False, "error": "Empty URL provided"}), 400
+
+    try:
+        resolved_url, headers, is_gdrive, gdrive_file_id, suggested_name = resolve_direct_video_url(raw_url)
+        session = requests.Session()
+        session.headers.update(headers)
+
+        res = session.get(resolved_url, stream=True, timeout=10)
+        res.raise_for_status()
+
+        cd_header = res.headers.get("Content-Disposition", "")
+        if "filename=" in cd_header:
+            cd_match = re.search(r'filename=["\']?([^"\';]+)["\']?', cd_header)
+            if cd_match:
+                suggested_name = secure_filename(cd_match.group(1))
+
+        if not any(suggested_name.lower().endswith(ext) for ext in ALLOWED_EXT):
+            suggested_name += ".mp4"
+
+        total_bytes = None
+        if "Content-Length" in res.headers:
+            try:
+                total_bytes = int(res.headers["Content-Length"])
+            except ValueError:
+                pass
+
+        res.close()
+
+        size_str = f"{round(total_bytes / (1024 * 1024), 1)} MB" if total_bytes else "Direct Stream"
+        provider = "Google Drive" if is_gdrive else ("Dropbox" if "dropbox" in raw_url.lower() else "Direct Video")
+
+        return jsonify({
+            "valid": True,
+            "filename": suggested_name,
+            "provider": provider,
+            "size_bytes": total_bytes,
+            "size_formatted": size_str,
+            "resolved_url": resolved_url
+        })
+    except Exception as e:
+        return jsonify({"valid": False, "error": str(e)}), 200
+
+
 @app.route("/api/fetch_url", methods=["POST"])
 def api_fetch_url():
     """Starts background streaming download of video from direct URL, Google Drive, or Dropbox."""
     data = request.get_json(silent=True) or {}
-    raw_url = (data.get("url") or "").strip()
+    raw_url = (data.get("url") or "").strip().strip('"\'<> \t\r\n')
     if not raw_url:
         return jsonify({"error": "Please provide a valid video URL"}), 400
-
-    parsed = urllib.parse.urlparse(raw_url)
-    if parsed.scheme not in ("http", "https"):
-        return jsonify({"error": "Invalid URL scheme. Must start with http:// or https://"}), 400
 
     download_id = uuid.uuid4().hex
     with url_downloads_lock:

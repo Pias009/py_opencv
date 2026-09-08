@@ -41,6 +41,11 @@ const sourceFileSection = document.getElementById("source-file-section");
 const sourceUrlSection = document.getElementById("source-url-section");
 const videoUrlInput = document.getElementById("video-url-input");
 const urlClearBtn = document.getElementById("url-clear-btn");
+const urlPasteBtn = document.getElementById("url-paste-btn");
+const urlStatusCard = document.getElementById("url-status-card");
+const urlStatusIcon = document.getElementById("url-status-icon");
+const urlStatusTitle = document.getElementById("url-status-title");
+const urlStatusMeta = document.getElementById("url-status-meta");
 
 // Detailed Upload & Cloud Ingestion Progress Elements
 const uploadProgressCard = document.getElementById("upload-progress-card");
@@ -55,6 +60,13 @@ const retryChunkNum = document.getElementById("retry-chunk-num");
 const retryAttemptNum = document.getElementById("retry-attempt-num");
 
 let currentSourceTab = "file"; // 'file' or 'url'
+
+const speedMap = {
+  "1": "1x Realtime",
+  "2": "2x Fast-Forward",
+  "4": "4x Ultra-Fast",
+  "8": "8x Maximum Speed"
+};
 
 const LINE_COLORS = ["#4f8cff", "#ff7a45", "#3ddc84", "#ff5c5c", "#c084fc", "#facc15"];
 
@@ -137,38 +149,166 @@ function updateProgressCard(opts) {
   }
 }
 
-// Source Tab Switching Event Listeners
-if (tabFileBtn && tabUrlBtn) {
-  tabFileBtn.addEventListener("click", () => {
-    currentSourceTab = "file";
-    tabFileBtn.classList.add("active");
-    tabUrlBtn.classList.remove("active");
-    if (sourceFileSection) sourceFileSection.hidden = false;
-    if (sourceUrlSection) sourceUrlSection.hidden = true;
-    clearError();
-  });
+// Source Tab Switching & Link Resolver
+let checkUrlTimer = null;
+let resolvedCloudMetadata = null;
 
-  tabUrlBtn.addEventListener("click", () => {
-    currentSourceTab = "url";
-    tabUrlBtn.classList.add("active");
-    tabFileBtn.classList.remove("active");
-    if (sourceFileSection) sourceFileSection.hidden = true;
-    if (sourceUrlSection) sourceUrlSection.hidden = false;
-    clearError();
-  });
+function switchToUrlTab(urlVal) {
+  currentSourceTab = "url";
+  if (tabUrlBtn) tabUrlBtn.classList.add("active");
+  if (tabFileBtn) tabFileBtn.classList.remove("active");
+  if (sourceFileSection) sourceFileSection.hidden = true;
+  if (sourceUrlSection) sourceUrlSection.hidden = false;
+  clearError();
+
+  if (urlVal && videoUrlInput) {
+    videoUrlInput.value = urlVal.trim();
+    if (urlClearBtn) urlClearBtn.style.display = "block";
+    inspectAndVerifyUrl(urlVal.trim());
+  }
 }
 
-if (videoUrlInput && urlClearBtn) {
+function switchToFileTab() {
+  currentSourceTab = "file";
+  if (tabFileBtn) tabFileBtn.classList.add("active");
+  if (tabUrlBtn) tabUrlBtn.classList.remove("active");
+  if (sourceFileSection) sourceFileSection.hidden = false;
+  if (sourceUrlSection) sourceUrlSection.hidden = true;
+  clearError();
+}
+
+if (tabFileBtn) tabFileBtn.addEventListener("click", switchToFileTab);
+if (tabUrlBtn) tabUrlBtn.addEventListener("click", () => switchToUrlTab());
+
+async function inspectAndVerifyUrl(rawUrl) {
+  clearTimeout(checkUrlTimer);
+  rawUrl = (rawUrl || "").trim().replace(/^["'<]+|["'>]+$/g, "");
+  if (!rawUrl) {
+    if (urlStatusCard) urlStatusCard.style.display = "none";
+    resolvedCloudMetadata = null;
+    return;
+  }
+
+  // Show inspecting state
+  if (urlStatusCard) {
+    urlStatusCard.style.display = "flex";
+    urlStatusCard.className = "url-status-card";
+    if (urlStatusIcon) urlStatusIcon.textContent = "⏳";
+    if (urlStatusTitle) urlStatusTitle.textContent = "Inspecting video link…";
+    if (urlStatusMeta) urlStatusMeta.textContent = "Connecting to cloud source to retrieve video filename & size…";
+  }
+
+  checkUrlTimer = setTimeout(async () => {
+    try {
+      const res = await fetch("/api/check_url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: rawUrl })
+      });
+      const data = await res.json();
+      if (data.valid) {
+        resolvedCloudMetadata = data;
+        if (urlStatusCard) {
+          urlStatusCard.style.display = "flex";
+          urlStatusCard.className = "url-status-card verified";
+          if (urlStatusIcon) urlStatusIcon.textContent = "🟢";
+          if (urlStatusTitle) urlStatusTitle.textContent = `${data.provider} Video: ${data.filename}`;
+          if (urlStatusMeta) urlStatusMeta.textContent = `Size: ${data.size_formatted} • Verified & ready for AI analysis!`;
+        }
+        clearError();
+      } else {
+        resolvedCloudMetadata = null;
+        if (urlStatusCard) {
+          urlStatusCard.style.display = "flex";
+          urlStatusCard.className = "url-status-card";
+          if (urlStatusIcon) urlStatusIcon.textContent = "☁️";
+          if (urlStatusTitle) urlStatusTitle.textContent = "Cloud Video Link Detected";
+          if (urlStatusMeta) urlStatusMeta.textContent = "Link format recognized. Ready to start counting.";
+        }
+      }
+    } catch (err) {
+      if (urlStatusCard) {
+        urlStatusCard.style.display = "flex";
+        urlStatusCard.className = "url-status-card";
+        if (urlStatusIcon) urlStatusIcon.textContent = "🔗";
+        if (urlStatusTitle) urlStatusTitle.textContent = "Video Link Attached";
+        if (urlStatusMeta) urlStatusMeta.textContent = "Click 'Start Counting' to stream and analyze.";
+      }
+    }
+  }, 300);
+}
+
+if (videoUrlInput) {
   videoUrlInput.addEventListener("input", () => {
-    urlClearBtn.style.display = videoUrlInput.value.trim() ? "block" : "none";
+    const val = videoUrlInput.value.trim();
+    if (urlClearBtn) urlClearBtn.style.display = val ? "block" : "none";
     clearError();
+    inspectAndVerifyUrl(val);
   });
+
+  videoUrlInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      startJob();
+    }
+  });
+}
+
+if (urlClearBtn) {
   urlClearBtn.addEventListener("click", () => {
-    videoUrlInput.value = "";
+    if (videoUrlInput) videoUrlInput.value = "";
     urlClearBtn.style.display = "none";
+    if (urlStatusCard) urlStatusCard.style.display = "none";
+    resolvedCloudMetadata = null;
     clearError();
   });
 }
+
+if (urlPasteBtn) {
+  urlPasteBtn.addEventListener("click", async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text && text.trim()) {
+        switchToUrlTab(text.trim());
+      } else {
+        showError("Clipboard is empty. Copy your video link first.");
+      }
+    } catch (err) {
+      if (videoUrlInput) {
+        videoUrlInput.focus();
+        videoUrlInput.select();
+      }
+      showError("Please press Ctrl+V to paste the link into the box.");
+    }
+  });
+}
+
+// Global & Dropzone Paste Handler (captures Ctrl+V anywhere on the page)
+window.addEventListener("paste", (e) => {
+  const activeEl = document.activeElement;
+  if (activeEl && activeEl.tagName === "INPUT" && activeEl.id === "video-url-input") {
+    return; // Regular paste into input; input event listener will trigger inspection
+  }
+  if (activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA")) {
+    return;
+  }
+
+  const pastedText = (e.clipboardData || window.clipboardData)?.getData("text");
+  if (pastedText) {
+    const trimmed = pastedText.trim();
+    if (
+      trimmed.includes("drive.google.com") ||
+      trimmed.includes("dropbox.com") ||
+      trimmed.startsWith("http://") ||
+      trimmed.startsWith("https://") ||
+      trimmed.length >= 25
+    ) {
+      e.preventDefault();
+      switchToUrlTab(trimmed);
+    }
+  }
+});
+
 
 // Resilient 4MB Chunked Upload with Exponential Backoff Auto-Retries & Live Speed Metrics
 async function uploadFileInChunks(file, onProgress) {
@@ -636,14 +776,21 @@ async function startJob() {
   let file = null;
   let url = null;
 
+  const urlVal = (videoUrlInput ? videoUrlInput.value : "").trim();
+  const fileVal = fileInput ? fileInput.files[0] : null;
+
+  if (currentSourceTab === "file" && !fileVal && urlVal) {
+    currentSourceTab = "url";
+  }
+
   if (currentSourceTab === "file") {
-    file = fileInput.files[0];
+    file = fileVal;
     if (!file) {
-      showError("Choose a video file to upload.");
+      showError("Please select a video file or paste a video link.");
       return;
     }
   } else {
-    url = (videoUrlInput ? videoUrlInput.value : "").trim();
+    url = urlVal;
     if (!url) {
       showError("Please enter a valid video or cloud link URL.");
       return;
@@ -1051,24 +1198,33 @@ function openConfirmModal() {
   clearError();
 
   let videoDisplayName = "";
+  const urlVal = (videoUrlInput ? videoUrlInput.value : "").trim();
+  const file = fileInput ? fileInput.files[0] : null;
+
+  if (currentSourceTab === "file" && !file && urlVal) {
+    currentSourceTab = "url";
+  }
+
   if (currentSourceTab === "file") {
-    const file = fileInput.files[0];
     if (!file) {
-      showError("Please select or drop a video file first.");
+      showError("Please select a video file or paste a video link first.");
       return;
     }
     videoDisplayName = file.name;
   } else {
-    const urlVal = (videoUrlInput ? videoUrlInput.value : "").trim();
     if (!urlVal) {
-      showError("Please enter a valid video or cloud link URL first.");
+      showError("Please enter or paste a valid video link first.");
       return;
     }
-    let parsedName = urlVal.split("/").filter(Boolean).pop() || "Cloud Video";
-    if (parsedName.includes("?")) parsedName = parsedName.split("?")[0];
-    if (urlVal.includes("drive.google.com")) parsedName = "Google Drive Shared Video";
-    else if (urlVal.includes("dropbox.com")) parsedName = "Dropbox Video: " + parsedName;
-    videoDisplayName = parsedName;
+    if (resolvedCloudMetadata && resolvedCloudMetadata.filename) {
+      videoDisplayName = `${resolvedCloudMetadata.provider}: ${resolvedCloudMetadata.filename}`;
+    } else {
+      let parsedName = urlVal.split("/").filter(Boolean).pop() || "Cloud Video";
+      if (parsedName.includes("?")) parsedName = parsedName.split("?")[0];
+      if (urlVal.includes("drive.google.com")) parsedName = "Google Drive Video";
+      else if (urlVal.includes("dropbox.com")) parsedName = "Dropbox Video: " + parsedName;
+      videoDisplayName = parsedName;
+    }
   }
 
   const speedSelect = document.getElementById("speed-select");
@@ -1089,7 +1245,9 @@ function openConfirmModal() {
 
   const modeText = modeMap[lineModeSelect ? lineModeSelect.value : "smart_flow"] || "✨ Smart Trajectory Flow (Zero Miss)";
   const speedText = speedMap[speedSelect ? speedSelect.value : "2"] || "2x Fast-Forward";
-  const namingText = termMap[directionRadio ? directionRadio.value : "IN_OUT"] || "IN / OUT";
+  const directionModeSelect = document.getElementById("direction-mode-select");
+  const directionVal = directionModeSelect ? directionModeSelect.value : "COMING_GOING";
+  const namingText = termMap[directionVal] || "COMING / GOING";
 
   let flowsText = [];
   if (toggleIn && toggleIn.checked) flowsText.push("🟢 IN Flow");
@@ -1135,7 +1293,7 @@ if (modalConfirmBtn) {
   });
 }
 
-startBtn.addEventListener("click", openConfirmModal);
+startBtn.addEventListener("click", startJob);
 cancelBtn.addEventListener("click", cancelJob);
 refreshBtn.addEventListener("click", loadHistory);
 newVideoBtn.addEventListener("click", startNewVideo);
