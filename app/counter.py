@@ -77,16 +77,10 @@ def vertical_line(frame_w, frame_h, pct=0.5):
     return [CountingLine("Line1", x, 25, x, frame_h - 25)]
 
 
-def box_lines(frame_w, frame_h, margin=15, scale=0.88):
-    """Four lines forming a small boundary box centered in the frame (North/South/
+def box_lines(frame_w, frame_h, margin=20, scale=0.76):
+    """Four lines forming a boundary box centered in the frame (North/South/
     West/East), sized at `scale` fraction of the frame's width/height, so all four
-    approaches of an intersection cross it cleanly instead of chasing the far frame
-    edges (which are often skewed or out of view for one or more lanes).
-
-    margin: kept for backward compatibility / fine nudging, applied on top of the
-            centered box (shrinks it further if > 0).
-    scale: fraction (0-1) of frame width/height the box spans, centered in the frame.
-           Default 0.65 = a box about two-thirds of the frame's size, centered.
+    approaches of an intersection cross it cleanly.
     """
     box_w = frame_w * scale
     box_h = frame_h * scale
@@ -96,10 +90,10 @@ def box_lines(frame_w, frame_h, margin=15, scale=0.88):
     y2 = int((frame_h + box_h) / 2) - margin
     center = ((x1 + x2) / 2, (y1 + y2) / 2)
     return [
-        CountingLine("North", x1, y1, x2, y1, inward_point=center),
-        CountingLine("South", x1, y2, x2, y2, inward_point=center),
-        CountingLine("West", x1, y1, x1, y2, inward_point=center),
-        CountingLine("East", x2, y1, x2, y2, inward_point=center),
+        CountingLine("North Line", x1, y1, x2, y1, inward_point=center),
+        CountingLine("South Line", x1, y2, x2, y2, inward_point=center),
+        CountingLine("West Line", x1, y1, x1, y2, inward_point=center),
+        CountingLine("East Line", x2, y1, x2, y2, inward_point=center),
     ]
 
 

@@ -127,8 +127,8 @@ def auto_detect_road_corridor(video_source, frame_w, frame_h, sample_frames=45):
 
             xmin = max(10, xmin - 25)
             xmax = min(frame_w - 10, xmax + 25)
-            ymin = max(10, ymin - 25)
-            ymax = min(frame_h - 10, ymax + 25)
+            ymin = max(int(frame_h * 0.22), ymin - 25)
+            ymax = min(int(frame_h * 0.78), ymax + 25)
 
             center = ((xmin + xmax) / 2, (ymin + ymax) / 2)
             lines = [
@@ -394,149 +394,188 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                         else:
                             tr["direction"] = "coming"
 
-                # ── Zero-Fault Raycasting Line Crossing (SOLE counting authority) ──
-                # ── Zero-Fault Zone Corridor Traversal (NO thin-line touching required) ──
-                # Vehicles passing through the road corridor are counted automatically based on
-                # motion trajectory, eliminating height-dependent line-touching misses for Cars/SUVs.
-                # ── Zero-Fault Zone Corridor Traversal (Spatial + Motion Direction Lock) ──
+                # ── Zero-Fault Raycasting Line Crossing (Strict Single-Count Authority) ──
                 if len(history) >= 2 and not tr.get("globally_counted"):
                     p_prev = history[-2]
                     p_curr = history[-1]
-
                     cx, cy = p_curr[0], p_curr[1]
 
-                    # True Motion-Vector Trajectory Direction:
-                    # dy < 0: moving toward top of frame -> OUTGOING (GOING / receding)
-                    # dy > 0: moving toward bottom of frame -> INCOMING (COMING / approaching)
-                    sample_len = min(6, len(history))
-                    dy_recent = history[-1][1] - history[-sample_len][1] if len(history) >= sample_len else (p_curr[1] - p_prev[1])
-                    dy_tot = history[-1][1] - history[0][1]
-
-                    if dy_tot < -1.0 or (dy_tot <= 0.2 and dy_recent < -0.2):
-                        is_going_vehicle = True
-                        is_coming_vehicle = False
-                        tr["direction"] = "going"
-                    elif dy_tot > 1.0 or (dy_tot >= -0.2 and dy_recent > 0.2):
-                        is_going_vehicle = False
-                        is_coming_vehicle = True
-                        tr["direction"] = "coming"
-                    else:
-                        bias = tr.get("entry_bias", "neutral")
-                        if bias == "going" or dy_recent <= 0:
-                            is_going_vehicle = True
-                            is_coming_vehicle = False
-                            tr["direction"] = "going"
-                        else:
-                            is_going_vehicle = False
-                            is_coming_vehicle = True
-                            tr["direction"] = "coming"
-
-                    if inverted_state:
-                        is_going_vehicle, is_coming_vehicle = is_coming_vehicle, is_going_vehicle
-                        tr["direction"] = "coming" if is_coming_vehicle else "going"
-
-                    disp = ((p_curr[0] - p_prev[0])**2 + (p_curr[1] - p_prev[1])**2)**0.5
-
-                    # Corridor Motion Traversal Check:
-                    tot_travel = ((p_curr[0] - history[0][0])**2 + (p_curr[1] - history[0][1])**2)**0.5
+                    # Stationary / Parked Vehicle Suppression:
+                    # Require minimum observable movement across tracked history (filters sensor/bbox jitter)
+                    tot_travel = ((cx - history[0][0])**2 + (cy - history[0][1])**2)**0.5
                     cat = tr["best_category"]
-                    is_heavy = cat in HEAVY_CATEGORIES
 
-                    min_travel = 10.0 if is_heavy else 6.0
-                    min_frames = 3 if is_heavy else 2
+                    if tot_travel >= 10.0 or (len(history) >= 4 and tot_travel >= 8.0):
+                        # Determine movement direction from trajectory (supports both vertical & horizontal roads)
+                        dx_tot = cx - history[0][0]
+                        dy_tot = cy - history[0][1]
+                        sample_len = min(6, len(history))
+                        dx_recent = cx - history[-sample_len][0]
+                        dy_recent = cy - history[-sample_len][1]
 
-                    if tot_travel >= min_travel and len(history) >= min_frames:
+                        # Detect whether road corridor is predominantly horizontal vs vertical
+                        is_horizontal_corridor = abs(dx_tot) > 2.2 * max(1.0, abs(dy_tot)) and abs(dx_tot) > 15.0
+
+                        if is_horizontal_corridor:
+                            if dx_tot > 3.0 or (dx_tot >= -0.5 and dx_recent > 1.5):
+                                is_going_vehicle = False  # West-to-East (Coming/In)
+                                is_coming_vehicle = True
+                                tr["direction"] = "coming"
+                            else:
+                                is_going_vehicle = True   # East-to-West (Going/Out)
+                                is_coming_vehicle = False
+                                tr["direction"] = "going"
+                        else:
+                            if dy_tot < -3.0 or (dy_tot <= 0.5 and dy_recent < -1.5):
+                                is_going_vehicle = True
+                                is_coming_vehicle = False
+                                tr["direction"] = "going"
+                            elif dy_tot > 3.0 or (dy_tot >= -0.5 and dy_recent > 1.5):
+                                is_going_vehicle = False
+                                is_coming_vehicle = True
+                                tr["direction"] = "coming"
+                            else:
+                                bias = tr.get("entry_bias", "neutral")
+                                if bias == "going" or dy_recent <= 0:
+                                    is_going_vehicle = True
+                                    is_coming_vehicle = False
+                                    tr["direction"] = "going"
+                                else:
+                                    is_going_vehicle = False
+                                    is_coming_vehicle = True
+                                    tr["direction"] = "coming"
+
+                        if inverted_state:
+                            is_going_vehicle, is_coming_vehicle = is_coming_vehicle, is_going_vehicle
+                            tr["direction"] = "coming" if is_coming_vehicle else "going"
+
                         # Direction gate:
                         if (not enable_in) and is_coming_vehicle:
                             pass  # Skip incoming when disabled
                         elif (not enable_out) and is_going_vehicle:
                             pass  # Skip outgoing when disabled
                         else:
-                            # --- Spatial/Temporal Track Glitch De-Duplication ---
-                            # Only deduplicate immediate ByteTrack track-swap glitches on the exact same physical vehicle.
-                            # Never discard legitimate following vehicles in traffic (which arrive > 1 sec later).
-                            is_duplicate = False
-                            for r_cat, r_x, r_y, r_f in recent_counted_vehicles:
-                                r_is_heavy = r_cat in HEAVY_CATEGORIES
-                                cat_match = (r_cat == cat) or (is_heavy and r_is_heavy)
+                            # Check crossing against each line
+                            for ln in lines:
+                                if tr.get("globally_counted"):
+                                    break
 
-                                max_frames = 20 if is_heavy else 15
-                                max_dist = 50.0 if is_heavy else 35.0
-                                if cat_match and (frame_idx - r_f) <= max_frames:
-                                    dist_recent = ((cx - r_x)**2 + (cy - r_y)**2)**0.5
-                                    if dist_recent <= max_dist:
-                                        is_duplicate = True
-                                        break
+                                clean_name = ln.name.replace(" Line", "").strip()
+                                # Skip lines disabled by user in UI
+                                if enabled_lines is not None and len(enabled_lines) > 0:
+                                    if clean_name not in enabled_lines and ln.name not in enabled_lines and len(lines) > 1:
+                                        continue
+                                if is_going_vehicle and enabled_lines_out is not None and len(enabled_lines_out) > 0:
+                                    if clean_name not in enabled_lines_out and ln.name not in enabled_lines_out and len(lines) > 1:
+                                        continue
+                                if is_coming_vehicle and enabled_lines_in is not None and len(enabled_lines_in) > 0:
+                                    if clean_name not in enabled_lines_in and ln.name not in enabled_lines_in and len(lines) > 1:
+                                        continue
 
-                            if is_duplicate:
-                                tr["globally_counted"] = True  # Inherit counted state, skip incrementing
-                            else:
-                                # Pick primary counting line (default North line for going, South for coming)
-                                target_line = lines[0]
-                                for ln in lines:
+                                # Multi-line corridor gate:
+                                # Vertical: Coming enters North (skip South exit); Going enters South (skip North exit)
+                                if not is_horizontal_corridor:
+                                    if is_coming_vehicle and "south" in ln.name.lower():
+                                        continue
                                     if is_going_vehicle and "north" in ln.name.lower():
-                                        target_line = ln
-                                        break
-                                    elif is_coming_vehicle and "south" in ln.name.lower():
-                                        target_line = ln
-                                        break
-
-                                clean_name = target_line.name.replace(" Line", "").strip()
-
-                                if is_going_vehicle:
-                                    target_line.out_count += 1
+                                        continue
                                 else:
-                                    target_line.in_count += 1
+                                    # Horizontal: Coming (W->E) enters West (skip East exit); Going (E->W) enters East (skip West exit)
+                                    if is_coming_vehicle and "east" in ln.name.lower():
+                                        continue
+                                    if is_going_vehicle and "west" in ln.name.lower():
+                                        continue
 
-                                tr["counted_lines"].add(target_line.name)
-                                # Mark globally counted so each vehicle is counted EXACTLY ONCE
-                                tr["globally_counted"] = True
-                                recent_counted_vehicles.append((cat, cx, cy, frame_idx))
-                                if len(recent_counted_vehicles) > 150:
-                                    recent_counted_vehicles.pop(0)
+                                # 1. Raycast segment intersection
+                                crossed = segments_intersect(p_prev, p_curr, (ln.x1, ln.y1), (ln.x2, ln.y2))
 
-                                categories_summary[cat] = categories_summary.get(cat, 0) + 1
+                                # 2. Signed side change across line
+                                side_p = ln.signed_side(p_prev[0], p_prev[1])
+                                side_c = ln.signed_side(p_curr[0], p_curr[1])
+                                if (side_p * side_c < 0) and ln.distance_to_segment(cx, cy) <= 65:
+                                    crossed = True
 
-                                if needs_vis:
-                                    cv2.line(frame, (target_line.x1, target_line.y1), (target_line.x2, target_line.y2), (0, 255, 0), 5)
+                                # 3. High-speed multi-frame leap check under frame stride
+                                if len(history) >= 4:
+                                    side_old = ln.signed_side(history[-3][0], history[-3][1])
+                                    if (side_old * side_c < 0) and ln.distance_to_segment(cx, cy) <= 75:
+                                        crossed = True
+
+                                # 4. Bounding box edge crossing
+                                if not crossed and box_intersects_segment(box, (ln.x1, ln.y1), (ln.x2, ln.y2)) and ln.distance_to_segment(cx, cy) <= 50:
+                                    crossed = True
+
+                                if crossed:
+                                    # Deduplication check against recently counted tracks
+                                    is_duplicate = False
+                                    for r_ev in recent_counted_vehicles:
+                                        if (frame_idx - r_ev["frame"]) <= 90:
+                                            d = ((cx - r_ev["cx"])**2 + (cy - r_ev["cy"])**2)**0.5
+                                            same_cat = (r_ev["cat"] == cat) or (r_ev["cat"] in HEAVY_CATEGORIES and cat in HEAVY_CATEGORIES) or (r_ev["cat"] in ["Car", "Microbus"] and cat in ["Car", "Microbus"])
+                                            if same_cat:
+                                                if d < 180 or (r_ev["dir"] == tr["direction"] and d < 220):
+                                                    is_duplicate = True
+                                                    break
+
+                                    if is_duplicate:
+                                        tr["globally_counted"] = True
+                                    else:
+                                        tr["globally_counted"] = True
+                                        tr["counted_lines"].add(ln.name)
+                                        if is_going_vehicle:
+                                            ln.out_count += 1
+                                        else:
+                                            ln.in_count += 1
+
+                                        categories_summary[cat] = categories_summary.get(cat, 0) + 1
+                                        recent_counted_vehicles.append({
+                                            "tid": track_id, "cat": cat, "cx": cx, "cy": cy,
+                                            "frame": frame_idx, "dir": tr["direction"], "box": box
+                                        })
+                                        if len(recent_counted_vehicles) > 200:
+                                            recent_counted_vehicles.pop(0)
+
+                                        if needs_vis:
+                                            cv2.line(frame, (ln.x1, ln.y1), (ln.x2, ln.y2), (0, 255, 0), 5)
 
                 if needs_vis:
                     # ── Direction labeling and Box Color Engine ──
-                    locked_dir = tr.get("direction")      # "going" | "coming"
+                    locked_dir = tr.get("direction", "going")
                     is_already_counted = tr.get("globally_counted", False)
                     cx, cy = history[-1][0], history[-1][1]
-                    is_on_right_lane = (cx >= frame_w * 0.48)
 
-                    sample_len = min(5, len(history))
-                    dy_recent = history[-1][1] - history[-sample_len][1] if len(history) >= sample_len else 0
-                    is_coming_now = (locked_dir == "coming") or is_on_right_lane or (dy_recent > 0)
+                    is_going = (locked_dir == "going")
+                    is_coming = (locked_dir == "coming")
 
-                    if is_coming_now or locked_dir == "coming":
+                    if is_coming:
                         motion_dir = "COMING"
                         dir_arrow  = "v"
                     else:
                         motion_dir = "GOING"
                         dir_arrow  = "^"
 
-                    # ── Box Color Logic (RED for Incoming when OFF, CYAN for Active Outgoing, GREEN for Counted) ──
-                    if is_already_counted and not (not enable_in and is_coming_now):
+                    # ── Box Color Logic (RED for non-counting directions, CYAN for active, GREEN for counted) ──
+                    if is_already_counted:
                         box_color    = (0, 255, 60)     # GREEN — counted ✓
                         status_label = "COUNTED"
-                    elif not enable_in and is_coming_now:
+                    elif not enable_in and is_coming:
                         box_color    = (0, 0, 255)      # BRIGHT RED — incoming (NOT COUNTING)
                         status_label = "NOT COUNTING"
-                    elif motion_dir == "GOING":
+                    elif not enable_out and is_going:
+                        box_color    = (0, 0, 255)      # BRIGHT RED — outgoing (NOT COUNTING)
+                        status_label = "NOT COUNTING"
+                    elif is_going:
                         box_color    = (255, 220, 0)    # CYAN — outgoing active
                         status_label = "OUTGOING"
                     else:
-                        box_color    = (0, 0, 255)      # BRIGHT RED — not counting
-                        status_label = "NOT COUNTING"
+                        box_color    = (255, 220, 0)    # CYAN — incoming active
+                        status_label = "INCOMING"
 
                     cur_dir_mode = job.get("direction_mode", "COMING_GOING")
                     if cur_dir_mode == "FORWARD_BACKWARD":
-                        disp_dir = "FORWARD" if motion_dir in ("GOING", "GOING?") else "BACKWARD"
+                        disp_dir = "FORWARD" if is_going else "BACKWARD"
                     elif cur_dir_mode == "IN_OUT":
-                        disp_dir = "OUT" if motion_dir in ("GOING", "GOING?") else "IN"
+                        disp_dir = "OUT" if is_going else "IN"
                     else:
                         disp_dir = motion_dir
 
