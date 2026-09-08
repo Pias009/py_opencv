@@ -60,6 +60,7 @@ def make_frame_sink(job):
     def sink(jpeg_bytes):
         with jobs_lock:
             job["last_frame"] = jpeg_bytes
+            job["frame_version"] = job.get("frame_version", 0) + 1
     return sink
 
 
@@ -518,6 +519,9 @@ def api_start():
         "reanalyzed": 0,
     }
     with jobs_lock:
+        for old_id, old_job in jobs.items():
+            if not old_job.get("done") and old_job.get("status") in ("starting", "running"):
+                old_job["cancel"] = True
         jobs[job_id] = job
 
     t = threading.Thread(target=job_worker, args=(job_id, save_path, filename), daemon=True)
@@ -611,27 +615,65 @@ def api_stream(job_id):
 
     def generate():
         boundary = b"--frame"
-        import cv2, numpy as np
-        # Yield an immediate placeholder frame so browser & proxy render preview instantly
-        placeholder = np.zeros((480, 854, 3), dtype=np.uint8)
-        cv2.putText(placeholder, "INITIALIZING VISION AI ENGINE...", (140, 230),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.70, (0, 230, 80), 2)
-        cv2.putText(placeholder, "Streaming video analytics live...", (260, 270),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.50, (180, 180, 180), 1)
-        _, init_jpeg = cv2.imencode(".jpg", placeholder, [cv2.IMWRITE_JPEG_QUALITY, 70])
-        yield (boundary + b"\r\n"
-               b"Content-Type: image/jpeg\r\n\r\n" + init_jpeg.tobytes() + b"\r\n")
+        last_version = -1
 
-        while True:
-            frame = job.get("last_frame")
-            if frame is not None:
-                yield (boundary + b"\r\n"
-                       b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n")
-            if job.get("done"):
-                break
-            time.sleep(0.05)
+        # Yield an immediate initial frame so browser & proxy render preview instantly
+        init_frame = job.get("last_frame")
+        if init_frame is not None:
+            last_version = job.get("frame_version", 0)
+            yield (boundary + b"\r\n"
+                   b"Content-Type: image/jpeg\r\n"
+                   b"Content-Length: " + str(len(init_frame)).encode() + b"\r\n\r\n" +
+                   init_frame + b"\r\n")
+        else:
+            import cv2, numpy as np
+            placeholder = np.zeros((480, 854, 3), dtype=np.uint8)
+            cv2.putText(placeholder, "INITIALIZING VISION AI ENGINE...", (130, 230),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.70, (0, 230, 80), 2)
+            cv2.putText(placeholder, "Starting video detection pipeline...", (240, 270),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.50, (180, 180, 180), 1)
+            _, init_jpeg = cv2.imencode(".jpg", placeholder, [cv2.IMWRITE_JPEG_QUALITY, 70])
+            init_bytes = init_jpeg.tobytes()
+            yield (boundary + b"\r\n"
+                   b"Content-Type: image/jpeg\r\n"
+                   b"Content-Length: " + str(len(init_bytes)).encode() + b"\r\n\r\n" +
+                   init_bytes + b"\r\n")
 
-    return Response(generate(), mimetype="multipart/x-mixed-replace; boundary=frame")
+        try:
+            while True:
+                cur_version = job.get("frame_version", 0)
+                if cur_version != last_version:
+                    frame = job.get("last_frame")
+                    if frame is not None:
+                        last_version = cur_version
+                        yield (boundary + b"\r\n"
+                               b"Content-Type: image/jpeg\r\n"
+                               b"Content-Length: " + str(len(frame)).encode() + b"\r\n\r\n" +
+                               frame + b"\r\n")
+                if job.get("done"):
+                    break
+                time.sleep(0.04)
+        except (GeneratorExit, ConnectionResetError, BrokenPipeError):
+            pass
+
+    resp = Response(generate(), mimetype="multipart/x-mixed-replace; boundary=frame")
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    resp.headers["X-Accel-Buffering"] = "no"
+    return resp
+
+
+@app.route("/api/debug_threads")
+def api_debug_threads():
+    """Live stack trace inspection of all server threads for debugging."""
+    import sys, traceback
+    output = []
+    for thread_id, frame in sys._current_frames().items():
+        thread_name = threading._active.get(thread_id, threading.Thread()).name
+        stack = "".join(traceback.format_stack(frame))
+        output.append(f"=== Thread {thread_id} ({thread_name}) ===\n{stack}")
+    return Response("\n\n".join(output), mimetype="text/plain")
 
 
 @app.route("/api/report/<day>/<filename>")

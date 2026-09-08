@@ -738,6 +738,15 @@ function beginRunView() {
   reportCard.hidden = true;
   runCard.hidden = false;
   runTitle.textContent = "Processing…";
+  streamImg.onerror = () => {
+    if (currentJobId) {
+      setTimeout(() => {
+        if (currentJobId) {
+          streamImg.src = `/api/stream/${currentJobId}?t=${Date.now()}`;
+        }
+      }, 1000);
+    }
+  };
   streamImg.src = `/api/stream/${currentJobId}?t=${Date.now()}`;
   statProgress.textContent = "0%";
   statFrames.textContent = "";

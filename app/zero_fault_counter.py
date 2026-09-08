@@ -3,6 +3,12 @@ import sys
 import time
 import cv2
 import numpy as np
+import torch
+
+try:
+    torch.set_num_threads(2)
+except Exception:
+    pass
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from counter import CountingLine, default_lines, box_lines, LINE_COLORS
@@ -44,15 +50,12 @@ HEAVY_CATEGORIES = {
 }
 
 
-_MODEL_CACHE = {}
-
-
 def get_yolo_model(model_path):
-    """Cache YOLO model in RAM to eliminate reload delay on job start."""
-    if model_path not in _MODEL_CACHE:
-        from ultralytics import YOLO
-        _MODEL_CACHE[model_path] = YOLO(model_path)
-    return _MODEL_CACHE[model_path]
+    """Return a clean YOLO model instance without stale predictor or tracker state."""
+    from ultralytics import YOLO
+    model = YOLO(model_path)
+    model.predictor = None
+    return model
 
 
 def ccw(A, B, C):
@@ -192,6 +195,28 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
     if job.get("invert_direction"):
         for ln in lines:
             ln.nx, ln.ny = -ln.nx, -ln.ny
+
+    # Grab the very first camera frame, draw lines and push to frame_sink immediately!
+    # User sees camera feed & counting lines within 100ms instead of a blank box.
+    if frame_sink is not None:
+        try:
+            ret_init, frame_init = cap.read()
+            if ret_init and frame_init is not None:
+                preview = frame_init.copy()
+                for ln in lines:
+                    cv2.line(preview, (ln.x1, ln.y1), (ln.x2, ln.y2), (0, 255, 60), 3)
+                    cv2.putText(preview, ln.name, (ln.x1 + 6, ln.y1 - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.60, (0, 255, 60), 2)
+                cv2.putText(preview, "STARTING AI TRACKING...", (25, 45),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.85, (0, 230, 80), 2)
+                ok, jpeg_init = cv2.imencode(".jpg", preview, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                if ok:
+                    frame_sink(jpeg_init.tobytes())
+        except Exception:
+            pass
+
+    # Release cap immediately so file descriptors and decoders are completely free for Ultralytics
+    cap.release()
 
     enable_in = bool(job.get("enable_in", True))
     enable_out = bool(job.get("enable_out", True))
@@ -667,7 +692,6 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
     if show_window:
         cv2.destroyAllWindows()
 
-    cap.release()
     job["finished_at"] = time.time()
     job["done"] = True
     if job["status"] == "running":
