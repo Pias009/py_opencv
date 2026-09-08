@@ -889,6 +889,15 @@ async function pollStatus() {
     const data = await res.json();
     if (!res.ok) return;
 
+    if (data.status === "running") {
+      runTitle.textContent = `Analyzing Video (${data.progress}%)…`;
+      sideStatus.textContent = "Live Analysis Active 🟢";
+      sideStatus.classList.add("is-live");
+    } else if (data.status === "starting") {
+      runTitle.textContent = "Starting AI Engine…";
+      sideStatus.textContent = "Initializing AI Engine… ⏳";
+    }
+
     sideTotal.textContent = data.count;
     statProgress.textContent = data.progress + "%";
     statFrames.textContent = data.total_frames ? `frame ${data.frame_idx}/${data.total_frames}` : "";

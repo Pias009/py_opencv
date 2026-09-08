@@ -611,6 +611,17 @@ def api_stream(job_id):
 
     def generate():
         boundary = b"--frame"
+        import cv2, numpy as np
+        # Yield an immediate placeholder frame so browser & proxy render preview instantly
+        placeholder = np.zeros((480, 854, 3), dtype=np.uint8)
+        cv2.putText(placeholder, "INITIALIZING VISION AI ENGINE...", (140, 230),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.70, (0, 230, 80), 2)
+        cv2.putText(placeholder, "Streaming video analytics live...", (260, 270),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.50, (180, 180, 180), 1)
+        _, init_jpeg = cv2.imencode(".jpg", placeholder, [cv2.IMWRITE_JPEG_QUALITY, 70])
+        yield (boundary + b"\r\n"
+               b"Content-Type: image/jpeg\r\n\r\n" + init_jpeg.tobytes() + b"\r\n")
+
         while True:
             frame = job.get("last_frame")
             if frame is not None:
