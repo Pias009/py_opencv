@@ -83,6 +83,26 @@ function clearError() {
   errorMsg.textContent = "";
 }
 
+// Floating Toast Notification System (replaces blocking browser alerts)
+function showToast(msg, type = "info") {
+  let container = document.getElementById("toast-container");
+  if (!container) {
+    container = document.createElement("div");
+    container.id = "toast-container";
+    container.className = "toast-container";
+    document.body.appendChild(container);
+  }
+  const toast = document.createElement("div");
+  toast.className = `toast-pill ${type}`;
+  toast.innerHTML = `<span>${msg}</span>`;
+  container.appendChild(toast);
+  setTimeout(() => {
+    if (toast.parentNode) {
+      toast.parentNode.removeChild(toast);
+    }
+  }, 3200);
+}
+
 // Format byte counts into human-readable MBs
 function formatBytes(bytes) {
   if (!bytes || bytes <= 0) return "0.0 MB";
@@ -673,6 +693,7 @@ if (dirBtnGoing) {
     document.querySelectorAll(".line-in-check").forEach(c => c.checked = false);
     syncDirectionButtons();
     updateSidebarRules();
+    showToast("🔴 Going Vehicles (Backside) direction activated", "warning");
   });
 }
 
@@ -686,6 +707,29 @@ if (dirBtnComing) {
     document.querySelectorAll(".line-out-check").forEach(c => c.checked = false);
     syncDirectionButtons();
     updateSidebarRules();
+    showToast("🟢 Coming Vehicles (Face Showing) direction activated", "success");
+  });
+}
+
+// Coming Vehicles (Face Showing) Only Preset Handler
+const presetComingOnlyBtn = document.getElementById("preset-coming-only-btn");
+if (presetComingOnlyBtn) {
+  presetComingOnlyBtn.addEventListener("click", () => {
+    const toggleIn = document.getElementById("toggle-in");
+    const toggleOut = document.getElementById("toggle-out");
+    const directionModeSelect = document.getElementById("direction-mode-select");
+
+    if (directionModeSelect) directionModeSelect.value = "COMING_GOING";
+    if (toggleIn) toggleIn.checked = true;
+    if (toggleOut) toggleOut.checked = false;
+
+    // Check all IN lines, uncheck OUT lines
+    document.querySelectorAll(".line-in-check").forEach(chk => chk.checked = true);
+    document.querySelectorAll(".line-out-check").forEach(chk => chk.checked = false);
+
+    syncDirectionButtons();
+    updateSidebarRules();
+    showToast("🟢 Configured for Coming Vehicles (Face Showing) Only! Going flow is OFF.", "success");
   });
 }
 
@@ -707,7 +751,29 @@ if (presetGoingOnlyBtn) {
 
     syncDirectionButtons();
     updateSidebarRules();
-    alert("🔴 Configured for Going Vehicles (Backside) Only!\n\n- Green Boxes: GOING Vehicles (Counting)\n- Red Boxes: COMING Vehicles (Not Counting)\n- Only vehicles moving forward showing backside/tail will be counted.");
+    showToast("🔴 Configured for Going Vehicles (Backside) Only! Coming flow is OFF.", "warning");
+  });
+}
+
+// Both Directions Preset Handler
+const presetBothFlowsBtn = document.getElementById("preset-both-flows-btn");
+if (presetBothFlowsBtn) {
+  presetBothFlowsBtn.addEventListener("click", () => {
+    const toggleIn = document.getElementById("toggle-in");
+    const toggleOut = document.getElementById("toggle-out");
+    const directionModeSelect = document.getElementById("direction-mode-select");
+
+    if (directionModeSelect) directionModeSelect.value = "COMING_GOING";
+    if (toggleIn) toggleIn.checked = true;
+    if (toggleOut) toggleOut.checked = true;
+
+    // Check all lines
+    document.querySelectorAll(".line-in-check").forEach(chk => chk.checked = true);
+    document.querySelectorAll(".line-out-check").forEach(chk => chk.checked = true);
+
+    syncDirectionButtons();
+    updateSidebarRules();
+    showToast("⚡ Configured for Both Directions! (Coming & Going traffic enabled)", "info");
   });
 }
 
@@ -715,11 +781,9 @@ if (presetGoingOnlyBtn) {
 const preset1SideBtn = document.getElementById("preset-1side-btn");
 if (preset1SideBtn) {
   preset1SideBtn.addEventListener("click", () => {
-    const lineModeSelect = document.getElementById("line-mode-select");
     const toggleIn = document.getElementById("toggle-in");
     const toggleOut = document.getElementById("toggle-out");
 
-    if (lineModeSelect) lineModeSelect.value = "vertical";
     if (toggleIn) toggleIn.checked = true;
     if (toggleOut) toggleOut.checked = false;
 
@@ -727,10 +791,12 @@ if (preset1SideBtn) {
     document.querySelectorAll(".line-in-check").forEach(chk => chk.checked = (chk.value === "North"));
     document.querySelectorAll(".line-out-check").forEach(chk => chk.checked = false);
 
+    syncDirectionButtons();
     updateSidebarRules();
-    alert("🚗 Configured for 1-Side Lane Counting!\n- Flow: IN Only (OUT Disabled)\n- Active Lane: North IN Side\n\nOnly vehicles entering through North IN will be counted in Total Vehicle Count.");
+    showToast("🚗 Configured for 1-Side Coming Lane! (North IN lane active, Going flow disabled)", "success");
   });
 }
+
 
 // Hover Shift Effect on Left Sidebar
 const sideConfigBlock = document.getElementById("side-config-block");

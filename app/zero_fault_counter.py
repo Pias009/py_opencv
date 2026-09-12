@@ -416,9 +416,9 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                 # ── Entry-side bias (first seen position) ───────────────────
                 if "entry_bias" not in tr and len(history) >= 1:
                     ey = history[0][1]
-                    if ey < frame_h * 0.25:
+                    if ey < frame_h * 0.45:
                         tr["entry_bias"] = "coming"
-                    elif ey > frame_h * 0.75:
+                    elif ey > frame_h * 0.65:
                         tr["entry_bias"] = "going"
                     else:
                         tr["entry_bias"] = "neutral"
@@ -436,10 +436,10 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                         bias = tr.get("entry_bias", "neutral")
                         votes_g += (1 if bias == "going" else 0)
                         votes_c += (1 if bias == "coming" else 0)
-                        if votes_g >= votes_c:
-                            tr["direction"] = "going"
-                        else:
+                        if dy_tot > 1.2 or votes_c > votes_g:
                             tr["direction"] = "coming"
+                        else:
+                            tr["direction"] = "going"
 
                 # ── Zero-Fault Raycasting Line Crossing (Strict Single-Count Authority) ──
                 if len(history) >= 2 and not tr.get("globally_counted"):
@@ -460,11 +460,11 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                         dx_recent = cx - history[-sample_len][0]
                         dy_recent = cy - history[-sample_len][1]
 
-                        # Detect whether road corridor is predominantly horizontal vs vertical
-                        is_horizontal_corridor = abs(dx_tot) > 2.2 * max(1.0, abs(dy_tot)) and abs(dx_tot) > 15.0
+                        # Check purely horizontal road motion (|dy| < 2.0 and |dx| > 10.0)
+                        is_purely_horizontal = abs(dy_tot) < 2.0 and abs(dy_recent) < 1.2 and abs(dx_tot) > 10.0
 
-                        if is_horizontal_corridor:
-                            if dx_tot > 3.0 or (dx_tot >= -0.5 and dx_recent > 1.5):
+                        if is_purely_horizontal:
+                            if dx_tot > 0:
                                 is_going_vehicle = False  # West-to-East (Coming/In)
                                 is_coming_vehicle = True
                                 tr["direction"] = "coming"
@@ -473,24 +473,33 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                                 is_coming_vehicle = False
                                 tr["direction"] = "going"
                         else:
-                            if dy_tot < -3.0 or (dy_tot <= 0.5 and dy_recent < -1.5):
-                                is_going_vehicle = True
-                                is_coming_vehicle = False
-                                tr["direction"] = "going"
-                            elif dy_tot > 3.0 or (dy_tot >= -0.5 and dy_recent > 1.5):
+                            # Perspective camera motion:
+                            # dy > 0: moving down towards camera -> COMING (Face Showing)
+                            # dy < 0: moving up away from camera -> GOING (Backside / Tail)
+                            votes_g = tr.get("votes_going", 0)
+                            votes_c = tr.get("votes_coming", 0)
+                            bias = tr.get("entry_bias", "neutral")
+                            votes_g += (1 if bias == "going" else 0)
+                            votes_c += (1 if bias == "coming" else 0)
+
+                            if dy_tot > 1.2 or (dy_tot >= -0.5 and dy_recent > 0.8) or votes_c > votes_g + 1:
                                 is_going_vehicle = False
                                 is_coming_vehicle = True
                                 tr["direction"] = "coming"
+                            elif dy_tot < -1.2 or (dy_tot <= 0.5 and dy_recent < -0.8) or votes_g > votes_c + 1:
+                                is_going_vehicle = True
+                                is_coming_vehicle = False
+                                tr["direction"] = "going"
                             else:
-                                bias = tr.get("entry_bias", "neutral")
-                                if bias == "going" or dy_recent <= 0:
-                                    is_going_vehicle = True
-                                    is_coming_vehicle = False
-                                    tr["direction"] = "going"
-                                else:
+                                if votes_c >= votes_g:
                                     is_going_vehicle = False
                                     is_coming_vehicle = True
                                     tr["direction"] = "coming"
+                                else:
+                                    is_going_vehicle = True
+                                    is_coming_vehicle = False
+                                    tr["direction"] = "going"
+
 
                         if inverted_state:
                             is_going_vehicle, is_coming_vehicle = is_coming_vehicle, is_going_vehicle
@@ -707,13 +716,22 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
             overlay_lines = [
                 (f"TOTAL COUNTED: {total_count}", (0, 255, 80), 0.90, 2),
             ]
-            color_going = (0, 230, 80)
-            color_coming = (60, 120, 255)
             for i, ln in enumerate(lines):
-                out_lbl = f"  {ln.name}  OUT(GOING):{ln.out_count}"
-                in_lbl  = f"  {ln.name}  IN(COMING):{ln.in_count}"
-                overlay_lines.append((out_lbl, color_going,  0.58, 2))
-                overlay_lines.append((in_lbl,  color_coming, 0.58, 2))
+                if enable_in and not enable_out:
+                    in_lbl = f"  {ln.name}  IN(COMING): {ln.in_count} [ACTIVE]"
+                    out_lbl = f"  {ln.name}  OUT(GOING): {ln.out_count} [OFF]"
+                    overlay_lines.append((in_lbl, (0, 255, 80), 0.60, 2))
+                    overlay_lines.append((out_lbl, (110, 110, 120), 0.52, 1))
+                elif enable_out and not enable_in:
+                    out_lbl = f"  {ln.name}  OUT(GOING): {ln.out_count} [ACTIVE]"
+                    in_lbl = f"  {ln.name}  IN(COMING): {ln.in_count} [OFF]"
+                    overlay_lines.append((out_lbl, (0, 255, 80), 0.60, 2))
+                    overlay_lines.append((in_lbl, (110, 110, 120), 0.52, 1))
+                else:
+                    out_lbl = f"  {ln.name}  OUT(GOING): {ln.out_count}"
+                    in_lbl  = f"  {ln.name}  IN(COMING): {ln.in_count}"
+                    overlay_lines.append((out_lbl, (0, 230, 80), 0.58, 2))
+                    overlay_lines.append((in_lbl, (60, 120, 255), 0.58, 2))
 
             line_height = 26
             y_start = frame_h - 14 - line_height * (len(overlay_lines) - 1)

@@ -174,10 +174,10 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
             <button type="button" class="info-trigger" data-ref="coming_going" title="Select Direction Naming Rules">ℹ️</button>
           </div>
           <div class="direction-btn-group" style="display: flex; gap: 8px;">
-            <button type="button" id="dir-btn-going" class="dir-mode-btn active-going" style="flex: 1; padding: 10px 6px; border-radius: 8px; border: 1px solid #ff4d4d; background: rgba(255, 77, 77, 0.2); color: #fff; font-weight: 700; font-size: 0.8rem; cursor: pointer; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center; gap: 4px;">
+            <button type="button" id="dir-btn-going" class="dir-mode-btn" style="flex: 1; padding: 10px 6px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255, 255, 255, 0.04); color: var(--text-dim); font-weight: 700; font-size: 0.8rem; cursor: pointer; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center; gap: 4px;">
               <span>🔴 Forward Going (Backside)</span>
             </button>
-            <button type="button" id="dir-btn-coming" class="dir-mode-btn" style="flex: 1; padding: 10px 6px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255, 255, 255, 0.04); color: var(--text-dim); font-weight: 700; font-size: 0.8rem; cursor: pointer; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center; gap: 4px;">
+            <button type="button" id="dir-btn-coming" class="dir-mode-btn active-coming" style="flex: 1; padding: 10px 6px; border-radius: 8px; border: 1px solid #3ddc84; background: rgba(61, 220, 132, 0.25); color: #fff; font-weight: 700; font-size: 0.8rem; cursor: pointer; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center; gap: 4px; box-shadow: 0 0 10px rgba(61, 220, 132, 0.3);">
               <span>🟢 Face Showing (Coming)</span>
             </button>
           </div>
@@ -203,9 +203,11 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
             <span>Traffic Direction &amp; Lane Counting Rules</span>
           </h3>
           <div class="preset-group">
-            <button id="preset-going-only-btn" type="button" class="preset-chip preset-highlight" data-tip="1-Click setup: Count ONLY Going vehicles showing backside/tail">🔴 Going (Backside) Only</button>
-            <button id="preset-1side-btn" type="button" class="preset-chip" data-tip="1-Click setup: Count ONLY 1-side incoming lane near camera">🚗 1-Side Lane Setup</button>
-            <button id="master-toggle-btn" type="button" class="preset-chip" data-tip="Enable or disable all boundary lines">⚡ Toggle All Sides</button>
+            <button id="preset-coming-only-btn" type="button" class="preset-chip preset-highlight-coming" data-tip="1-Click setup: Count ONLY Coming vehicles showing front face / headlights">🟢 Coming (Face Showing) Only</button>
+            <button id="preset-going-only-btn" type="button" class="preset-chip preset-highlight-going" data-tip="1-Click setup: Count ONLY Going vehicles showing backside/tail">🔴 Going (Backside) Only</button>
+            <button id="preset-both-flows-btn" type="button" class="preset-chip" data-tip="Count BOTH Coming and Going traffic simultaneously">⚡ Both Directions</button>
+            <button id="preset-1side-btn" type="button" class="preset-chip" data-tip="1-Click setup: Count ONLY 1-side incoming lane near camera">🚗 1-Side Coming Setup</button>
+            <button id="master-toggle-btn" type="button" class="preset-chip" data-tip="Enable or disable all boundary lines">🧭 Toggle All Sides</button>
           </div>
         </div>
 
@@ -271,7 +273,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
         <div class="flow-config-box flow-config-out" style="margin-top: 14px;">
           <div class="flow-box-header">
             <label class="flow-main-toggle" data-tip="Enable or disable OUT / Going vehicle counting">
-              <input type="checkbox" id="toggle-out" checked hidden>
+              <input type="checkbox" id="toggle-out" hidden>
               <div class="flow-main-content">
                 <span class="flow-main-icon">🔴</span>
                 <div class="flow-main-text">
@@ -280,7 +282,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
                 </div>
               </div>
               <div class="flow-main-actions">
-                <span class="flow-main-badge" id="badge-out">ACTIVE</span>
+                <span class="flow-main-badge badge-inactive" id="badge-out">OFF</span>
                 <button type="button" class="info-trigger" data-ref="out_flow" title="View OUT Flow Diagram">ℹ️</button>
               </div>
             </label>
@@ -290,19 +292,19 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
             <span class="sides-label">Select Which Sides / Lanes to Count for OUT:</span>
             <div class="sides-grid">
               <label class="side-chip side-out-chip" data-tip="Count OUT vehicles crossing North side">
-                <input type="checkbox" class="line-out-check" value="North" checked hidden>
+                <input type="checkbox" class="line-out-check" value="North" hidden>
                 <span>⬆️ North OUT</span>
               </label>
               <label class="side-chip side-out-chip" data-tip="Count OUT vehicles crossing South side">
-                <input type="checkbox" class="line-out-check" value="South" checked hidden>
+                <input type="checkbox" class="line-out-check" value="South" hidden>
                 <span>⬇️ South OUT</span>
               </label>
               <label class="side-chip side-out-chip" data-tip="Count OUT vehicles crossing West side">
-                <input type="checkbox" class="line-out-check" value="West" checked hidden>
+                <input type="checkbox" class="line-out-check" value="West" hidden>
                 <span>⬅️ West OUT</span>
               </label>
               <label class="side-chip side-out-chip" data-tip="Count OUT vehicles crossing East side">
-                <input type="checkbox" class="line-out-check" value="East" checked hidden>
+                <input type="checkbox" class="line-out-check" value="East" hidden>
                 <span>➡️ East OUT</span>
               </label>
             </div>
@@ -469,6 +471,6 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   </div>
 </div>
 
-<script src="/static/app.js?v=14.0"></script>
+<script src="/static/app.js?v=16.0"></script>
 </body>
 </html>
