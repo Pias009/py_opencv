@@ -325,7 +325,7 @@ def job_worker(job_id, video_path, source_label):
 
         from counter import CountingLine
         if line_mode == "smart_flow":
-            lines = [CountingLine("Traffic Flow", 0, int(frame_h * 0.35), frame_w, int(frame_h * 0.35))]
+            lines = [CountingLine("Traffic Flow", 0, int(frame_h * 0.42), frame_w, int(frame_h * 0.42))]
         elif line_mode == "horizontal":
             lines = default_lines(frame_w, frame_h)
         elif line_mode == "dual_gate":
@@ -334,9 +334,9 @@ def job_worker(job_id, video_path, source_label):
         elif line_mode == "vertical":
             lines = vertical_line(frame_w, frame_h, pct=0.5)
         elif line_mode == "auto":
-            lines = [CountingLine("Traffic Flow", 0, int(frame_h * 0.35), frame_w, int(frame_h * 0.35))]
+            lines = [CountingLine("Traffic Flow", 0, int(frame_h * 0.42), frame_w, int(frame_h * 0.42))]
         else:
-            lines = [CountingLine("Traffic Flow", 0, int(frame_h * 0.35), frame_w, int(frame_h * 0.35))]
+            lines = [CountingLine("Traffic Flow", 0, int(frame_h * 0.42), frame_w, int(frame_h * 0.42))]
 
         from zero_fault_counter import run_zero_fault_counter
         run_zero_fault_counter(video_path, job, lines=lines, model_key="bnvd",

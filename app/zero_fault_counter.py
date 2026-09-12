@@ -193,7 +193,7 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
 
     if not lines:
         if is_smart_flow:
-            lines = [CountingLine("Traffic Flow", 0, int(frame_h * 0.35), frame_w, int(frame_h * 0.35))]
+            lines = [CountingLine("Traffic Flow", 0, int(frame_h * 0.42), frame_w, int(frame_h * 0.42))]
         else:
             lines = box_lines(frame_w, frame_h, margin=40)
 
@@ -210,7 +210,7 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
             if ret_init and frame_init is not None:
                 preview = frame_init.copy()
                 if is_smart_flow:
-                    road_y = int(frame_h * 0.35)
+                    road_y = int(frame_h * 0.42)
                     cv2.line(preview, (10, road_y), (frame_w - 10, road_y), (0, 230, 80), 2)
                     cv2.putText(preview, "SMART TRAJECTORY FLOW (ZERO MISS - NO LINE TOUCH REQUIRED)", (25, 45),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 230, 80), 2)
@@ -298,7 +298,7 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
         # Draw line boundaries or active road flow zone
         if needs_vis:
             if is_smart_flow:
-                road_y = int(frame_h * 0.35)
+                road_y = int(frame_h * 0.42)
                 # Draw sleek active road flow indicator
                 cv2.line(frame, (10, road_y), (frame_w - 10, road_y), (0, 230, 80), 2)
                 cv2.putText(frame, "ACTIVE ROAD FLOW COUNTING ZONE (ALL LANES)", (18, road_y - 8),
@@ -416,7 +416,11 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                 # ── Entry-side bias (first seen position) ───────────────────
                 if "entry_bias" not in tr and len(history) >= 1:
                     ey = history[0][1]
-                    if ey < frame_h * 0.45:
+                    ex = history[0][0]
+                    # Right side entry moving across is cross/going traffic
+                    if ex > frame_w * 0.55:
+                        tr["entry_bias"] = "going"
+                    elif ey < frame_h * 0.45:
                         tr["entry_bias"] = "coming"
                     elif ey > frame_h * 0.65:
                         tr["entry_bias"] = "going"
@@ -431,15 +435,40 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                     dy_tot = history[-1][1] - history[0][1]
                     tot_disp = (dx_tot**2 + dy_tot**2) ** 0.5
                     if tot_disp >= MIN_TRAVEL_PX_DIR:
-                        votes_g = tr.get("votes_going",  0)
-                        votes_c = tr.get("votes_coming", 0)
-                        bias = tr.get("entry_bias", "neutral")
-                        votes_g += (1 if bias == "going" else 0)
-                        votes_c += (1 if bias == "coming" else 0)
-                        if dy_tot > 1.2 or votes_c > votes_g:
-                            tr["direction"] = "coming"
+                        abs_dx = abs(dx_tot)
+                        abs_dy = abs(dy_tot)
+                        is_horiz = (abs_dx >= 15.0 and abs_dx > 0.65 * abs_dy) or (abs_dx >= 30.0 and abs_dx > 0.40 * abs_dy)
+                        if tr.get("locked_dir"):
+                            tr["direction"] = tr["locked_dir"]
+                        elif is_horiz:
+                            if dx_tot < 0:
+                                # Right-to-Left (East to West cross traffic): treated as going / out
+                                tr["direction"] = "going"
+                                tr["flow_side"] = "East"
+                                if abs_dx >= 20.0:
+                                    tr["locked_dir"] = "going"
+                            else:
+                                # Left-to-Right (West to East)
+                                tr["direction"] = "going"
+                                tr["flow_side"] = "West"
+                                if abs_dx >= 20.0:
+                                    tr["locked_dir"] = "going"
                         else:
-                            tr["direction"] = "going"
+                            votes_g = tr.get("votes_going",  0)
+                            votes_c = tr.get("votes_coming", 0)
+                            bias = tr.get("entry_bias", "neutral")
+                            votes_g += (1 if bias == "going" else 0)
+                            votes_c += (1 if bias == "coming" else 0)
+                            if dy_tot > 1.5 or votes_c > votes_g:
+                                tr["direction"] = "coming"
+                                tr["flow_side"] = "South"
+                                if abs_dy >= 20.0 and abs_dy > 0.65 * abs_dx:
+                                    tr["locked_dir"] = "coming"
+                            else:
+                                tr["direction"] = "going"
+                                tr["flow_side"] = "North"
+                                if abs_dy >= 20.0 and abs_dy > 0.65 * abs_dx:
+                                    tr["locked_dir"] = "going"
 
                 # ── Zero-Fault Raycasting Line Crossing (Strict Single-Count Authority) ──
                 if len(history) >= 2 and not tr.get("globally_counted"):
@@ -456,50 +485,71 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                         # Determine movement direction from trajectory (supports both vertical & horizontal roads)
                         dx_tot = cx - history[0][0]
                         dy_tot = cy - history[0][1]
+                        abs_dx = abs(dx_tot)
+                        abs_dy = abs(dy_tot)
                         sample_len = min(6, len(history))
                         dx_recent = cx - history[-sample_len][0]
                         dy_recent = cy - history[-sample_len][1]
 
-                        # Check purely horizontal road motion (|dy| < 2.0 and |dx| > 10.0)
-                        is_purely_horizontal = abs(dy_tot) < 2.0 and abs(dy_recent) < 1.2 and abs(dx_tot) > 10.0
-
-                        if is_purely_horizontal:
-                            if dx_tot > 0:
-                                is_going_vehicle = False  # West-to-East (Coming/In)
-                                is_coming_vehicle = True
-                                tr["direction"] = "coming"
-                            else:
-                                is_going_vehicle = True   # East-to-West (Going/Out)
-                                is_coming_vehicle = False
-                                tr["direction"] = "going"
+                        if tr.get("locked_dir"):
+                            locked = tr["locked_dir"]
+                            is_going_vehicle = (locked == "going")
+                            is_coming_vehicle = (locked == "coming")
+                            tr["direction"] = locked
                         else:
-                            # Perspective camera motion:
-                            # dy > 0: moving down towards camera -> COMING (Face Showing)
-                            # dy < 0: moving up away from camera -> GOING (Backside / Tail)
-                            votes_g = tr.get("votes_going", 0)
-                            votes_c = tr.get("votes_coming", 0)
-                            bias = tr.get("entry_bias", "neutral")
-                            votes_g += (1 if bias == "going" else 0)
-                            votes_c += (1 if bias == "coming" else 0)
+                            is_horizontal = (abs_dx >= 15.0 and abs_dx > 0.65 * abs_dy) or (abs_dx >= 30.0 and abs_dx > 0.40 * abs_dy)
 
-                            if dy_tot > 1.2 or (dy_tot >= -0.5 and dy_recent > 0.8) or votes_c > votes_g + 1:
-                                is_going_vehicle = False
-                                is_coming_vehicle = True
-                                tr["direction"] = "coming"
-                            elif dy_tot < -1.2 or (dy_tot <= 0.5 and dy_recent < -0.8) or votes_g > votes_c + 1:
-                                is_going_vehicle = True
-                                is_coming_vehicle = False
-                                tr["direction"] = "going"
-                            else:
-                                if votes_c >= votes_g:
-                                    is_going_vehicle = False
-                                    is_coming_vehicle = True
-                                    tr["direction"] = "coming"
+                            if is_horizontal:
+                                if dx_tot < 0:
+                                    # RIGHT-TO-LEFT (East to West cross traffic): NEVER count as Coming!
+                                    is_going_vehicle = True
+                                    is_coming_vehicle = False
+                                    tr["direction"] = "going"
+                                    tr["flow_side"] = "East"
+                                    if abs_dx >= 20.0:
+                                        tr["locked_dir"] = "going"
                                 else:
                                     is_going_vehicle = True
                                     is_coming_vehicle = False
                                     tr["direction"] = "going"
+                                    tr["flow_side"] = "West"
+                                    if abs_dx >= 20.0:
+                                        tr["locked_dir"] = "going"
+                            else:
+                                # Perspective camera motion:
+                                # dy > 0: moving down towards camera -> COMING (Face Showing / South Coming)
+                                # dy < 0: moving up away from camera -> GOING (Backside / Tail)
+                                votes_g = tr.get("votes_going", 0)
+                                votes_c = tr.get("votes_coming", 0)
+                                bias = tr.get("entry_bias", "neutral")
+                                votes_g += (1 if bias == "going" else 0)
+                                votes_c += (1 if bias == "coming" else 0)
 
+                                if dy_tot > 1.5 or (dy_tot >= -0.5 and dy_recent > 1.0) or votes_c > votes_g + 1:
+                                    is_going_vehicle = False
+                                    is_coming_vehicle = True
+                                    tr["direction"] = "coming"
+                                    tr["flow_side"] = "South"
+                                    if abs_dy >= 20.0 and abs_dy > 0.65 * abs_dx:
+                                        tr["locked_dir"] = "coming"
+                                elif dy_tot < -1.5 or (dy_tot <= 0.5 and dy_recent < -1.0) or votes_g > votes_c + 1:
+                                    is_going_vehicle = True
+                                    is_coming_vehicle = False
+                                    tr["direction"] = "going"
+                                    tr["flow_side"] = "North"
+                                    if abs_dy >= 20.0 and abs_dy > 0.65 * abs_dx:
+                                        tr["locked_dir"] = "going"
+                                else:
+                                    if votes_c >= votes_g:
+                                        is_going_vehicle = False
+                                        is_coming_vehicle = True
+                                        tr["direction"] = "coming"
+                                        tr["flow_side"] = "South"
+                                    else:
+                                        is_going_vehicle = True
+                                        is_coming_vehicle = False
+                                        tr["direction"] = "going"
+                                        tr["flow_side"] = "North"
 
                         if inverted_state:
                             is_going_vehicle, is_coming_vehicle = is_coming_vehicle, is_going_vehicle
@@ -513,40 +563,61 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                         else:
                             if is_smart_flow:
                                 # ── SMART TRAJECTORY FLOW ENGINE (Zero Miss, No Line Touch Required) ──
-                                # 1. Road corridor check: y >= 0.20 * frame_h (covers all drivable road, filters sky/clouds)
-                                in_road_corridor = (cy >= frame_h * 0.20)
+                                # Side / lane filtering: check user-selected sides
+                                side_allowed = True
+                                veh_side = tr.get("flow_side", "South")
+                                if is_coming_vehicle and enabled_lines_in is not None and len(enabled_lines_in) > 0:
+                                    side_allowed = False
+                                    for al in enabled_lines_in:
+                                        al_low = al.strip().lower()
+                                        if al_low in veh_side.lower() or (al_low in ["south", "north"] and veh_side.lower() in ["south", "north"]):
+                                            side_allowed = True
+                                            break
+                                elif is_going_vehicle and enabled_lines_out is not None and len(enabled_lines_out) > 0:
+                                    side_allowed = False
+                                    for al in enabled_lines_out:
+                                        al_low = al.strip().lower()
+                                        if al_low in veh_side.lower():
+                                            side_allowed = True
+                                            break
 
-                                if in_road_corridor:
-                                    # Deduplication check against recently counted tracks (prevents double counts on ID switch / occlusion)
-                                    is_duplicate = False
-                                    for r_ev in recent_counted_vehicles:
-                                        if (frame_idx - r_ev["frame"]) <= 90:
-                                            d = ((cx - r_ev["cx"])**2 + (cy - r_ev["cy"])**2)**0.5
-                                            same_cat = (r_ev["cat"] == cat) or (r_ev["cat"] in HEAVY_CATEGORIES and cat in HEAVY_CATEGORIES) or (r_ev["cat"] in ["Car", "Microbus"] and cat in ["Car", "Microbus"])
-                                            if same_cat:
-                                                if d < 140 or (r_ev.get("dir") == tr["direction"] and d < 190):
-                                                    is_duplicate = True
-                                                    break
+                                if not side_allowed:
+                                    pass  # Skip if side / lane is unselected
+                                else:
+                                    # Road corridor check: vehicle must reach active intersection zone
+                                    in_road_corridor = (cy >= frame_h * 0.28)
 
-                                    if is_duplicate:
-                                        tr["globally_counted"] = True
-                                    else:
-                                        tr["globally_counted"] = True
-                                        target_ln = lines[0] if lines else None
-                                        if target_ln:
-                                            tr["counted_lines"].add(target_ln.name)
-                                            if is_going_vehicle:
-                                                target_ln.out_count += 1
-                                            else:
-                                                target_ln.in_count += 1
+                                    if in_road_corridor:
+                                        # Deduplication check against recently counted tracks (prevents double counts on ID switch / occlusion)
+                                        is_duplicate = False
+                                        for r_ev in recent_counted_vehicles:
+                                            if (frame_idx - r_ev["frame"]) <= 90:
+                                                d = ((cx - r_ev["cx"])**2 + (cy - r_ev["cy"])**2)**0.5
+                                                same_cat = (r_ev["cat"] == cat) or (r_ev["cat"] in HEAVY_CATEGORIES and cat in HEAVY_CATEGORIES) or (r_ev["cat"] in ["Car", "Microbus"] and cat in ["Car", "Microbus"])
+                                                if same_cat:
+                                                    if d < 140 or (r_ev.get("dir") == tr["direction"] and d < 190):
+                                                        is_duplicate = True
+                                                        break
 
-                                        categories_summary[cat] = categories_summary.get(cat, 0) + 1
-                                        recent_counted_vehicles.append({
-                                            "tid": track_id, "cat": cat, "cx": cx, "cy": cy,
-                                            "frame": frame_idx, "dir": tr["direction"], "box": box
-                                        })
-                                        if len(recent_counted_vehicles) > 250:
-                                            recent_counted_vehicles.pop(0)
+                                        if is_duplicate:
+                                            tr["globally_counted"] = True
+                                        else:
+                                            tr["globally_counted"] = True
+                                            target_ln = lines[0] if lines else None
+                                            if target_ln:
+                                                tr["counted_lines"].add(target_ln.name)
+                                                if is_going_vehicle:
+                                                    target_ln.out_count += 1
+                                                else:
+                                                    target_ln.in_count += 1
+
+                                            categories_summary[cat] = categories_summary.get(cat, 0) + 1
+                                            recent_counted_vehicles.append({
+                                                "tid": track_id, "cat": cat, "cx": cx, "cy": cy,
+                                                "frame": frame_idx, "dir": tr["direction"], "box": box
+                                            })
+                                            if len(recent_counted_vehicles) > 250:
+                                                recent_counted_vehicles.pop(0)
                             else:
                                 # ── TRADITIONAL LINE-CROSSING MODE ──
                                 # Check crossing against each line
@@ -634,16 +705,30 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                         motion_dir = "GOING"
                         dir_arrow  = "^"
 
+                    # Check if side is disallowed under current counting rules
+                    disallowed_side = False
+                    veh_side = tr.get("flow_side", "South")
+                    if is_coming and enabled_lines_in is not None and len(enabled_lines_in) > 0:
+                        disallowed_side = True
+                        for al in enabled_lines_in:
+                            al_low = al.strip().lower()
+                            if al_low in veh_side.lower() or (al_low in ["south", "north"] and veh_side.lower() in ["south", "north"]):
+                                disallowed_side = False
+                                break
+
                     # ── Box Color Logic (RED for non-counting directions, CYAN for active, GREEN for counted) ──
-                    if is_already_counted:
-                        box_color    = (0, 255, 60)     # GREEN — counted ✓
-                        status_label = "COUNTED"
-                    elif not enable_in and is_coming:
+                    if not enable_in and is_coming:
                         box_color    = (0, 0, 255)      # BRIGHT RED — incoming (NOT COUNTING)
                         status_label = "NOT COUNTING"
                     elif not enable_out and is_going:
                         box_color    = (0, 0, 255)      # BRIGHT RED — outgoing (NOT COUNTING)
                         status_label = "NOT COUNTING"
+                    elif disallowed_side:
+                        box_color    = (0, 0, 255)      # BRIGHT RED — side not selected (NOT COUNTING)
+                        status_label = "NOT COUNTING"
+                    elif is_already_counted:
+                        box_color    = (0, 255, 60)     # GREEN — counted ✓
+                        status_label = "COUNTED"
                     elif is_going:
                         box_color    = (255, 220, 0)    # CYAN — outgoing active
                         status_label = "OUTGOING"
