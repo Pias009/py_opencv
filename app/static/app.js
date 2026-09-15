@@ -242,25 +242,108 @@ if (tabUrlBtn) tabUrlBtn.addEventListener("click", () => switchToUrlTab());
 
 const batchDebounceTimers = {};
 
+function isCloudUrl(str) {
+  if (!str) return false;
+  const s = str.trim().replace(/^["'<]+|["'>]+$/g, "");
+  return /^https?:\/\//i.test(s) ||
+         /drive\.google\.com/i.test(s) ||
+         /docs\.google\.com/i.test(s) ||
+         /dropbox\.com/i.test(s) ||
+         (/^[a-zA-Z0-9_-]{25,50}$/.test(s) && !s.includes(".") && !s.includes("/"));
+}
+
 async function checkBatchPath(targetIndex) {
   const input = document.getElementById(`batch-path-${targetIndex}`);
   const statusBadge = document.getElementById(`batch-status-${targetIndex}`);
   const card = document.getElementById(`batch-card-${targetIndex}`);
-  const raw = (input ? input.value : "").trim();
+  const statusCard = document.getElementById(`batch-status-card-${targetIndex}`);
+  const statusIcon = document.getElementById(`batch-status-icon-${targetIndex}`);
+  const statusTitle = document.getElementById(`batch-status-title-${targetIndex}`);
+  const statusMeta = document.getElementById(`batch-status-meta-${targetIndex}`);
+
+  const raw = (input ? input.value : "").trim().replace(/^["'<]+|["'>]+$/g, "");
   if (!raw) {
     if (statusBadge) {
       statusBadge.textContent = "Not selected";
       statusBadge.className = "batch-box-status";
+      statusBadge.title = "";
     }
-    if (card) card.classList.remove("verified");
+    if (statusCard) statusCard.style.display = "none";
+    if (card) {
+      card.classList.remove("verified");
+      card.classList.remove("error");
+    }
     return null;
   }
 
+  // Show inspecting state
   if (statusBadge) {
-    statusBadge.textContent = "Checking…";
+    statusBadge.textContent = "⏳ Checking…";
     statusBadge.className = "batch-box-status";
   }
+  if (statusCard) {
+    statusCard.style.display = "flex";
+    statusCard.className = "batch-status-card";
+    if (statusIcon) statusIcon.textContent = "⏳";
+    if (statusTitle) statusTitle.textContent = "Inspecting video source…";
+    if (statusMeta) statusMeta.textContent = isCloudUrl(raw)
+      ? "Connecting to cloud source to retrieve video metadata…"
+      : "Checking local video file on server…";
+  }
 
+  // If input is a Google Drive or Cloud URL
+  if (isCloudUrl(raw)) {
+    try {
+      const res = await fetch("/api/check_url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: raw })
+      });
+      const data = await res.json();
+      const prov = data.provider || (raw.includes("drive.google") || raw.includes("docs.google") ? "Google Drive" : "Cloud Link");
+      const filename = data.filename || (prov === "Google Drive" ? "gdrive_video.mp4" : "cloud_video.mp4");
+      const sizeStr = data.size_formatted || "Cloud Stream";
+
+      if (statusBadge) {
+        statusBadge.textContent = `🟢 ${prov}: ${filename}`;
+        statusBadge.className = "batch-box-status verified";
+        statusBadge.title = `${prov}: ${filename} (${sizeStr})`;
+      }
+      if (statusCard) {
+        statusCard.style.display = "flex";
+        statusCard.className = "batch-status-card verified";
+        if (statusIcon) statusIcon.textContent = "🟢";
+        if (statusTitle) statusTitle.textContent = `${prov} Video: ${filename}`;
+        if (statusMeta) statusMeta.textContent = `Size: ${sizeStr} • Verified & ready for AI analysis!`;
+      }
+      if (card) {
+        card.classList.remove("error");
+        card.classList.add("verified");
+      }
+      clearError();
+      return raw;
+    } catch (e) {
+      const prov = (raw.includes("drive.google") || raw.includes("docs.google")) ? "Google Drive" : "Cloud Link";
+      if (statusBadge) {
+        statusBadge.textContent = `🟢 ${prov} Ready`;
+        statusBadge.className = "batch-box-status verified";
+      }
+      if (statusCard) {
+        statusCard.style.display = "flex";
+        statusCard.className = "batch-status-card verified";
+        if (statusIcon) statusIcon.textContent = "☁️";
+        if (statusTitle) statusTitle.textContent = `${prov} Video Attached`;
+        if (statusMeta) statusMeta.textContent = "Link recognized. Ready to stream & analyze.";
+      }
+      if (card) {
+        card.classList.remove("error");
+        card.classList.add("verified");
+      }
+      return raw;
+    }
+  }
+
+  // Local filesystem path
   try {
     const res = await fetch("/api/check_path", {
       method: "POST",
@@ -270,10 +353,21 @@ async function checkBatchPath(targetIndex) {
     const data = await res.json();
     if (data.valid) {
       if (statusBadge) {
-        statusBadge.textContent = `🟢 Ready: ${data.size_formatted}`;
+        statusBadge.textContent = `🟢 Ready: ${data.filename} (${data.size_formatted})`;
         statusBadge.className = "batch-box-status verified";
+        statusBadge.title = data.path;
       }
-      if (card) card.classList.add("verified");
+      if (statusCard) {
+        statusCard.style.display = "flex";
+        statusCard.className = "batch-status-card verified";
+        if (statusIcon) statusIcon.textContent = "📁";
+        if (statusTitle) statusTitle.textContent = `Local Video: ${data.filename}`;
+        if (statusMeta) statusMeta.textContent = `Size: ${data.size_formatted} • Verified & ready for AI analysis!`;
+      }
+      if (card) {
+        card.classList.remove("error");
+        card.classList.add("verified");
+      }
       clearError();
       return data.path;
     } else {
@@ -281,7 +375,17 @@ async function checkBatchPath(targetIndex) {
         statusBadge.textContent = "⚠️ Not found";
         statusBadge.className = "batch-box-status error";
       }
-      if (card) card.classList.remove("verified");
+      if (statusCard) {
+        statusCard.style.display = "flex";
+        statusCard.className = "batch-status-card error";
+        if (statusIcon) statusIcon.textContent = "⚠️";
+        if (statusTitle) statusTitle.textContent = "Video File Not Found";
+        if (statusMeta) statusMeta.textContent = `File not found on server: ${raw}`;
+      }
+      if (card) {
+        card.classList.remove("verified");
+        card.classList.add("error");
+      }
       return null;
     }
   } catch (e) {
@@ -299,10 +403,35 @@ function initBatchBoxListeners() {
     if (input) {
       input.addEventListener("input", () => {
         clearTimeout(batchDebounceTimers[idx]);
-        batchDebounceTimers[idx] = setTimeout(() => checkBatchPath(idx), 400);
+        batchDebounceTimers[idx] = setTimeout(() => checkBatchPath(idx), 350);
       });
       input.addEventListener("blur", () => checkBatchPath(idx));
     }
+  });
+
+  document.querySelectorAll(".batch-paste-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const idx = btn.getAttribute("data-target");
+      const pathInput = document.getElementById(`batch-path-${idx}`);
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text && text.trim()) {
+          if (pathInput) {
+            pathInput.value = text.trim();
+            checkBatchPath(idx);
+          }
+          showToast(`Pasted video link into Box ${idx}`, "success");
+        } else {
+          showError(`Clipboard is empty. Copy your Google Drive or video link first.`);
+        }
+      } catch (err) {
+        if (pathInput) {
+          pathInput.focus();
+          pathInput.select();
+        }
+        showToast(`Please press Ctrl+V to paste link into Box ${idx}`, "info");
+      }
+    });
   });
 
   document.querySelectorAll(".batch-browse-btn").forEach(btn => {
@@ -324,27 +453,61 @@ function initBatchBoxListeners() {
       const pathInput = document.getElementById(`batch-path-${idx}`);
       const statusBadge = document.getElementById(`batch-status-${idx}`);
       const card = document.getElementById(`batch-card-${idx}`);
+      const statusCard = document.getElementById(`batch-status-card-${idx}`);
+      const statusIcon = document.getElementById(`batch-status-icon-${idx}`);
+      const statusTitle = document.getElementById(`batch-status-title-${idx}`);
+      const statusMeta = document.getElementById(`batch-status-meta-${idx}`);
 
       if (statusBadge) {
         statusBadge.textContent = "Uploading…";
         statusBadge.className = "batch-box-status";
       }
+      if (statusCard) {
+        statusCard.style.display = "flex";
+        statusCard.className = "batch-status-card";
+        if (statusIcon) statusIcon.textContent = "⏳";
+        if (statusTitle) statusTitle.textContent = `Uploading ${file.name}…`;
+        if (statusMeta) statusMeta.textContent = "Preparing chunks for upload…";
+      }
 
       try {
         const uploadedPath = await uploadFileInChunks(file, (pct) => {
           if (statusBadge) statusBadge.textContent = `Uploading ${pct}%…`;
+          if (statusMeta) statusMeta.textContent = `Uploading chunked video: ${pct}%`;
         });
         if (pathInput) pathInput.value = uploadedPath;
+        const sizeStr = `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
         if (statusBadge) {
-          statusBadge.textContent = `🟢 Ready: ${(file.size / (1024 * 1024)).toFixed(1)} MB`;
+          statusBadge.textContent = `🟢 Ready: ${sizeStr}`;
           statusBadge.className = "batch-box-status verified";
         }
-        if (card) card.classList.add("verified");
+        if (statusCard) {
+          statusCard.style.display = "flex";
+          statusCard.className = "batch-status-card verified";
+          if (statusIcon) statusIcon.textContent = "📁";
+          if (statusTitle) statusTitle.textContent = `Uploaded: ${file.name}`;
+          if (statusMeta) statusMeta.textContent = `Size: ${sizeStr} • Ready for batch analysis!`;
+        }
+        if (card) {
+          card.classList.remove("error");
+          card.classList.add("verified");
+        }
         clearError();
       } catch (e) {
         if (statusBadge) {
           statusBadge.textContent = "Upload failed";
           statusBadge.className = "batch-box-status error";
+        }
+        if (statusCard) {
+          statusCard.style.display = "flex";
+          statusCard.className = "batch-status-card error";
+          if (statusIcon) statusIcon.textContent = "⚠️";
+          if (statusTitle) statusTitle.textContent = "Upload Failed";
+          if (statusMeta) statusMeta.textContent = e.message;
+        }
+        if (card) {
+          card.classList.remove("verified");
+          card.classList.add("error");
         }
         showError(`Failed to upload ${file.name}: ${e.message}`);
       }
@@ -369,14 +532,21 @@ function initBatchBoxListeners() {
       const pathInput = document.getElementById(`batch-path-${idx}`);
       const fileInp = document.getElementById(`batch-file-input-${idx}`);
       const statusBadge = document.getElementById(`batch-status-${idx}`);
+      const statusCard = document.getElementById(`batch-status-card-${idx}`);
       const card = document.getElementById(`batch-card-${idx}`);
       if (pathInput) pathInput.value = "";
       if (fileInp) fileInp.value = "";
       if (statusBadge) {
         statusBadge.textContent = "Not selected";
         statusBadge.className = "batch-box-status";
+        statusBadge.title = "";
       }
-      if (card) card.classList.remove("verified");
+      if (statusCard) statusCard.style.display = "none";
+      if (card) {
+        card.classList.remove("verified");
+        card.classList.remove("error");
+      }
+      clearError();
     });
   });
 }
@@ -490,7 +660,7 @@ if (urlPasteBtn) {
 // Global & Dropzone Paste Handler (captures Ctrl+V anywhere on the page)
 window.addEventListener("paste", (e) => {
   const activeEl = document.activeElement;
-  if (activeEl && activeEl.tagName === "INPUT" && activeEl.id === "video-url-input") {
+  if (activeEl && activeEl.tagName === "INPUT" && (activeEl.id === "video-url-input" || activeEl.classList.contains("batch-path-input"))) {
     return; // Regular paste into input; input event listener will trigger inspection
   }
   if (activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA")) {
@@ -508,6 +678,24 @@ window.addEventListener("paste", (e) => {
       trimmed.length >= 25
     ) {
       e.preventDefault();
+      if (currentSourceTab === "batch") {
+        for (let i = 1; i <= 3; i++) {
+          const inp = document.getElementById(`batch-path-${i}`);
+          if (inp && !inp.value.trim()) {
+            inp.value = trimmed;
+            checkBatchPath(i);
+            showToast(`Pasted video link into Box ${i}`, "success");
+            return;
+          }
+        }
+        const inp1 = document.getElementById("batch-path-1");
+        if (inp1) {
+          inp1.value = trimmed;
+          checkBatchPath(1);
+          showToast(`Pasted video link into Box 1`, "success");
+        }
+        return;
+      }
       switchToUrlTab(trimmed);
     }
   }
@@ -1420,6 +1608,56 @@ async function startBatchJob() {
       </div>`;
   }
 
+  // Pre-fetch any cloud URLs (Google Drive / Dropbox / URL) using fetchCloudVideo
+  const rawPaths = [p1, p2, p3];
+  const finalPaths = [];
+
+  for (let i = 0; i < rawPaths.length; i++) {
+    const p = rawPaths[i];
+    const vidNum = i + 1;
+    if (isCloudUrl(p)) {
+      if (batchBuildBtn) {
+        batchBuildBtn.innerHTML = `
+          <div class="btn-inner-content">
+            <span class="btn-icon">☁️</span>
+            <div class="btn-text-group">
+              <span class="btn-main-title">FETCHING CLOUD VIDEO ${vidNum} OF 3…</span>
+              <span class="btn-sub-title">Streaming video into server for processing</span>
+            </div>
+          </div>`;
+      }
+      showToast(`Fetching Video ${vidNum} from cloud (Google Drive / URL)…`, "info");
+      try {
+        const cloudRes = await fetchCloudVideo(p);
+        finalPaths.push(cloudRes.filePath);
+        const statusBadge = document.getElementById(`batch-status-${vidNum}`);
+        if (statusBadge) {
+          statusBadge.textContent = `🟢 Ready: ${cloudRes.filename}`;
+          statusBadge.className = "batch-box-status verified";
+        }
+        const statusCard = document.getElementById(`batch-status-card-${vidNum}`);
+        if (statusCard) {
+          statusCard.style.display = "flex";
+          statusCard.className = "batch-status-card verified";
+          const iconEl = document.getElementById(`batch-status-icon-${vidNum}`);
+          const titleEl = document.getElementById(`batch-status-title-${vidNum}`);
+          const metaEl = document.getElementById(`batch-status-meta-${vidNum}`);
+          if (iconEl) iconEl.textContent = "🟢";
+          if (titleEl) titleEl.textContent = `Fetched: ${cloudRes.filename}`;
+          if (metaEl) metaEl.textContent = `Downloaded to server and ready for AI batch analysis.`;
+        }
+      } catch (err) {
+        showError(`Failed to fetch cloud video ${vidNum}: ${err.message}`);
+        resetBatchBuildBtn();
+        hideProgressCard();
+        return;
+      }
+    } else {
+      finalPaths.push(p);
+    }
+  }
+  hideProgressCard();
+
   const speedSelect = document.getElementById("speed-select");
   const lineModeSelect = document.getElementById("line-mode-select");
   const directionModeSelect = document.getElementById("direction-mode-select");
@@ -1443,7 +1681,7 @@ async function startBatchJob() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        videos: [p1, p2, p3],
+        videos: finalPaths,
         speed,
         line_mode: lineMode,
         direction_mode: directionMode,
@@ -1464,7 +1702,7 @@ async function startBatchJob() {
     }
 
     currentBatchId = data.batch_id;
-    beginBatchRunView([p1, p2, p3]);
+    beginBatchRunView(finalPaths);
   } catch (e) {
     showError("Batch launch error: " + e.message);
     resetBatchBuildBtn();

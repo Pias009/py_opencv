@@ -413,7 +413,33 @@ def api_check_url():
             "resolved_url": resolved_url
         })
     except Exception as e:
+        is_gdrive = "drive.google.com" in raw_url or "docs.google.com" in raw_url or bool(re.match(r"^[a-zA-Z0-9_-]{25,50}$", raw_url))
+        is_dropbox = "dropbox.com" in raw_url.lower()
+        if is_gdrive or is_dropbox or raw_url.startswith(("http://", "https://")):
+            provider = "Google Drive" if is_gdrive else ("Dropbox" if is_dropbox else "Cloud Video")
+            sug_name = suggested_name if 'suggested_name' in locals() and suggested_name else ("gdrive_video.mp4" if is_gdrive else "cloud_video.mp4")
+            return jsonify({
+                "valid": True,
+                "filename": sug_name,
+                "provider": provider,
+                "size_formatted": "Cloud Stream",
+                "resolved_url": raw_url,
+                "note": "Recognized cloud video link"
+            }), 200
         return jsonify({"valid": False, "error": str(e)}), 200
+
+
+def is_cloud_url(str_val: str) -> bool:
+    if not str_val:
+        return False
+    s = str_val.strip().strip('"\'<> \t\r\n')
+    if s.startswith(("http://", "https://", "drive.google.com", "docs.google.com", "dropbox.com")):
+        return True
+    if "drive.google.com" in s or "docs.google.com" in s or "dropbox.com" in s:
+        return True
+    if re.match(r"^[a-zA-Z0-9_-]{25,50}$", s) and "." not in s and "/" not in s:
+        return True
+    return False
 
 
 def resolve_video_path(raw_str):
@@ -435,13 +461,107 @@ def resolve_video_path(raw_str):
     return None, None
 
 
+def download_video_from_url_sync(raw_url):
+    """Synchronously downloads a cloud video (Google Drive, Dropbox, direct URL) into UPLOAD_DIR."""
+    resolved_url, headers, is_gdrive, gdrive_file_id, suggested_name = resolve_direct_video_url(raw_url)
+    session = requests.Session()
+    session.headers.update(headers)
+    res = session.get(resolved_url, stream=True, timeout=30)
+    res.raise_for_status()
+
+    if is_gdrive:
+        confirm_token = None
+        for key, val in session.cookies.items():
+            if key.startswith("download_warning"):
+                confirm_token = val
+                break
+        if not confirm_token:
+            text_peek = res.text[:2000]
+            match = re.search(r"confirm=([0-9A-Za-z_-]+)", text_peek)
+            if match:
+                confirm_token = match.group(1)
+        if confirm_token:
+            confirm_url = f"https://drive.google.com/uc?export=download&confirm={confirm_token}&id={gdrive_file_id}"
+            res = session.get(confirm_url, stream=True, timeout=30)
+            res.raise_for_status()
+
+    cd_header = res.headers.get("Content-Disposition", "")
+    if "filename=" in cd_header:
+        cd_match = re.search(r'filename=["\']?([^"\';]+)["\']?', cd_header)
+        if cd_match:
+            suggested_name = secure_filename(cd_match.group(1))
+
+    if not any(suggested_name.lower().endswith(ext) for ext in ALLOWED_EXT):
+        suggested_name += ".mp4"
+
+    unique_name = f"{uuid.uuid4().hex}_{suggested_name}"
+    save_path = os.path.join(UPLOAD_DIR, unique_name)
+
+    with open(save_path, "wb") as f:
+        for chunk in res.iter_content(chunk_size=1024 * 1024):
+            if chunk:
+                f.write(chunk)
+
+    return save_path, suggested_name
+
+
 @app.route("/api/check_path", methods=["POST"])
 def api_check_path():
-    """Validates local filesystem or repository paths for video files."""
+    """Validates local filesystem paths, repository paths, or cloud video URLs."""
     data = request.get_json(silent=True) or {}
     raw_path = (data.get("path") or "").strip().strip('"\'<> \t\r\n')
     if not raw_path:
         return jsonify({"valid": False, "error": "Empty path provided"}), 200
+
+    # If it is a Google Drive or Cloud URL, inspect via resolve_direct_video_url
+    if is_cloud_url(raw_path):
+        try:
+            resolved_url, headers, is_gdrive, gdrive_file_id, suggested_name = resolve_direct_video_url(raw_path)
+            session = requests.Session()
+            session.headers.update(headers)
+            res = session.get(resolved_url, stream=True, timeout=10)
+            res.raise_for_status()
+
+            cd_header = res.headers.get("Content-Disposition", "")
+            if "filename=" in cd_header:
+                cd_match = re.search(r'filename=["\']?([^"\';]+)["\']?', cd_header)
+                if cd_match:
+                    suggested_name = secure_filename(cd_match.group(1))
+
+            if not any(suggested_name.lower().endswith(ext) for ext in ALLOWED_EXT):
+                suggested_name += ".mp4"
+
+            total_bytes = None
+            if "Content-Length" in res.headers:
+                try:
+                    total_bytes = int(res.headers["Content-Length"])
+                except ValueError:
+                    pass
+            res.close()
+
+            size_str = f"{round(total_bytes / (1024 * 1024), 1)} MB" if total_bytes else "Cloud Stream"
+            provider = "Google Drive" if is_gdrive else ("Dropbox" if "dropbox" in raw_path.lower() else "Cloud Video")
+
+            return jsonify({
+                "valid": True,
+                "filename": suggested_name,
+                "provider": provider,
+                "path": raw_path,
+                "is_url": True,
+                "size_bytes": total_bytes,
+                "size_formatted": size_str,
+            })
+        except Exception:
+            provider = "Google Drive" if ("drive.google.com" in raw_path or "docs.google.com" in raw_path or re.match(r"^[a-zA-Z0-9_-]{25,50}$", raw_path)) else "Cloud Video"
+            sug_name = suggested_name if 'suggested_name' in locals() and suggested_name else ("gdrive_video.mp4" if "Google Drive" in provider else "cloud_video.mp4")
+            return jsonify({
+                "valid": True,
+                "filename": sug_name,
+                "provider": provider,
+                "path": raw_path,
+                "is_url": True,
+                "size_formatted": "Cloud Stream"
+            })
 
     resolved_path, filename = resolve_video_path(raw_path)
     if not resolved_path:
@@ -453,6 +573,7 @@ def api_check_path():
         "valid": True,
         "filename": filename,
         "path": resolved_path,
+        "is_url": False,
         "size_bytes": sz,
         "size_formatted": f"{sz_mb} MB"
     })
@@ -926,9 +1047,15 @@ def api_batch_start():
 
     resolved_videos = []
     for idx, raw_v in enumerate(raw_videos, start=1):
-        path, fname = resolve_video_path(raw_v)
-        if not path:
-            return jsonify({"error": f"Video {idx} could not be found: '{raw_v}'. Please check the path."}), 400
+        if is_cloud_url(raw_v):
+            try:
+                path, fname = download_video_from_url_sync(raw_v)
+            except Exception as e:
+                return jsonify({"error": f"Failed to download cloud video {idx} ({raw_v}): {str(e)}"}), 400
+        else:
+            path, fname = resolve_video_path(raw_v)
+            if not path:
+                return jsonify({"error": f"Video {idx} could not be found: '{raw_v}'. Please check the path."}), 400
         resolved_videos.append({
             "index": idx,
             "path": path,

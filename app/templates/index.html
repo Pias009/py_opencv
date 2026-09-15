@@ -116,17 +116,25 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
               <div class="batch-box-header">
                 <div class="batch-box-title">
                   <span class="batch-num-pill">1</span>
-                  <span>Video 1 Path</span>
+                  <span>Video 1</span>
                 </div>
                 <span class="batch-box-status" id="batch-status-1">Not selected</span>
               </div>
               <div class="batch-box-body">
-                <input type="text" id="batch-path-1" class="batch-path-input" placeholder="e.g. video.mp4 or /full/path/to/video1.mp4">
+                <input type="text" id="batch-path-1" class="batch-path-input" placeholder="Paste Google Drive link, URL, or local path…">
                 <div class="batch-actions-row">
-                  <button type="button" class="batch-btn batch-browse-btn" data-target="1">📂 Browse File</button>
+                  <button type="button" class="batch-btn batch-paste-btn" data-target="1" title="Paste link from clipboard">📋 Paste</button>
+                  <button type="button" class="batch-btn batch-browse-btn" data-target="1">📂 Browse</button>
                   <button type="button" class="batch-btn batch-sample-btn" data-target="1" data-sample="video.mp4">⚡ Sample 1</button>
-                  <button type="button" class="batch-btn batch-clear-btn" data-target="1">✕</button>
+                  <button type="button" class="batch-btn batch-clear-btn" data-target="1" title="Clear box">✕</button>
                   <input type="file" id="batch-file-input-1" class="batch-hidden-file" accept=".mp4,.avi,.mov,.mkv,.webm" hidden>
+                </div>
+                <div id="batch-status-card-1" class="batch-status-card" style="display: none;">
+                  <div class="batch-status-icon" id="batch-status-icon-1">⏳</div>
+                  <div class="batch-status-info">
+                    <div class="batch-status-title" id="batch-status-title-1">Checking video…</div>
+                    <div class="batch-status-meta" id="batch-status-meta-1">Connecting to cloud provider…</div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -136,17 +144,25 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
               <div class="batch-box-header">
                 <div class="batch-box-title">
                   <span class="batch-num-pill">2</span>
-                  <span>Video 2 Path</span>
+                  <span>Video 2</span>
                 </div>
                 <span class="batch-box-status" id="batch-status-2">Not selected</span>
               </div>
               <div class="batch-box-body">
-                <input type="text" id="batch-path-2" class="batch-path-input" placeholder="e.g. scratch/user_test_short.mp4 or /full/path/to/video2.mp4">
+                <input type="text" id="batch-path-2" class="batch-path-input" placeholder="Paste Google Drive link, URL, or local path…">
                 <div class="batch-actions-row">
-                  <button type="button" class="batch-btn batch-browse-btn" data-target="2">📂 Browse File</button>
+                  <button type="button" class="batch-btn batch-paste-btn" data-target="2" title="Paste link from clipboard">📋 Paste</button>
+                  <button type="button" class="batch-btn batch-browse-btn" data-target="2">📂 Browse</button>
                   <button type="button" class="batch-btn batch-sample-btn" data-target="2" data-sample="scratch/user_test_short.mp4">⚡ Sample 2</button>
-                  <button type="button" class="batch-btn batch-clear-btn" data-target="2">✕</button>
+                  <button type="button" class="batch-btn batch-clear-btn" data-target="2" title="Clear box">✕</button>
                   <input type="file" id="batch-file-input-2" class="batch-hidden-file" accept=".mp4,.avi,.mov,.mkv,.webm" hidden>
+                </div>
+                <div id="batch-status-card-2" class="batch-status-card" style="display: none;">
+                  <div class="batch-status-icon" id="batch-status-icon-2">⏳</div>
+                  <div class="batch-status-info">
+                    <div class="batch-status-title" id="batch-status-title-2">Checking video…</div>
+                    <div class="batch-status-meta" id="batch-status-meta-2">Connecting to cloud provider…</div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -156,20 +172,35 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
               <div class="batch-box-header">
                 <div class="batch-box-title">
                   <span class="batch-num-pill">3</span>
-                  <span>Video 3 Path</span>
+                  <span>Video 3</span>
                 </div>
                 <span class="batch-box-status" id="batch-status-3">Not selected</span>
               </div>
               <div class="batch-box-body">
-                <input type="text" id="batch-path-3" class="batch-path-input" placeholder="e.g. scratch/suv_clip.mp4 or /full/path/to/video3.mp4">
+                <input type="text" id="batch-path-3" class="batch-path-input" placeholder="Paste Google Drive link, URL, or local path…">
                 <div class="batch-actions-row">
-                  <button type="button" class="batch-btn batch-browse-btn" data-target="3">📂 Browse File</button>
+                  <button type="button" class="batch-btn batch-paste-btn" data-target="3" title="Paste link from clipboard">📋 Paste</button>
+                  <button type="button" class="batch-btn batch-browse-btn" data-target="3">📂 Browse</button>
                   <button type="button" class="batch-btn batch-sample-btn" data-target="3" data-sample="scratch/suv_clip.mp4">⚡ Sample 3</button>
-                  <button type="button" class="batch-btn batch-clear-btn" data-target="3">✕</button>
+                  <button type="button" class="batch-btn batch-clear-btn" data-target="3" title="Clear box">✕</button>
                   <input type="file" id="batch-file-input-3" class="batch-hidden-file" accept=".mp4,.avi,.mov,.mkv,.webm" hidden>
+                </div>
+                <div id="batch-status-card-3" class="batch-status-card" style="display: none;">
+                  <div class="batch-status-icon" id="batch-status-icon-3">⏳</div>
+                  <div class="batch-status-info">
+                    <div class="batch-status-title" id="batch-status-title-3">Checking video…</div>
+                    <div class="batch-status-meta" id="batch-status-meta-3">Connecting to cloud provider…</div>
+                  </div>
                 </div>
               </div>
             </div>
+          </div>
+
+          <div class="url-provider-tags" style="margin-top: 10px; justify-content: center;">
+            <span class="url-tag">☁️ Google Drive (View / Share Links)</span>
+            <span class="url-tag">📦 Dropbox Links</span>
+            <span class="url-tag">⚡ Direct MP4 / MKV / MOV URLs</span>
+            <span class="url-tag">📁 Local Server Files</span>
           </div>
         </div>
 

@@ -1524,6 +1524,10 @@ button.stop-btn:active {
   border-color: rgba(255, 255, 255, 0.2);
 }
 
+.batch-paste-btn {
+  color: #38bdf8;
+}
+
 .batch-browse-btn {
   flex: 1;
   justify-content: center;
@@ -1541,6 +1545,58 @@ button.stop-btn:active {
 
 .batch-clear-btn:hover {
   color: #ff5c5c;
+}
+
+/* Batch Box Dedicated Status Card */
+.batch-status-card {
+  margin-top: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: all 0.25s ease;
+}
+
+.batch-status-card.verified {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+.batch-status-card.error {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.batch-status-icon {
+  font-size: 1.15rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.batch-status-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.batch-status-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.batch-status-meta {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Batch Pipeline Stepper (in Run Card) */
