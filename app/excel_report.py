@@ -146,7 +146,8 @@ def _build_survey_table(ws, entry):
     c3.border = THIN_BORDER
     ws.column_dimensions[get_column_letter(tot_col)].width = 14
 
-    tot_cell = ws.cell(row=r, column=tot_col, value=f"=SUM(B{r}:V{r})")
+    single_tot = sum(get_count_for_col(keys) for _, _, _, keys in SURVEY_21_COLUMNS)
+    tot_cell = ws.cell(row=r, column=tot_col, value=single_tot)
     tot_cell.font = BOLD
     tot_cell.alignment = CENTER
     tot_cell.border = THIN_BORDER
@@ -329,11 +330,13 @@ def generate_batch_report_xlsx(batch_entry, output_path):
 
     # Overview Total Row
     tot_row_idx = 9
+    grand_total_frames = sum(r.get("total_frames", 0) for r in [v1_res, v2_res, v3_res] if isinstance(r.get("total_frames"), (int, float)))
+    grand_total_vehicles = v1_res.get("count", 0) + v2_res.get("count", 0) + v3_res.get("count", 0)
     ws.cell(row=tot_row_idx, column=1, value="COMBINED ALL VIDEOS").font = BOLD
     ws.cell(row=tot_row_idx, column=2, value=f"{len(results)} Videos Processed")
-    ws.cell(row=tot_row_idx, column=3, value="=SUM(C6:C8)").alignment = CENTER
+    ws.cell(row=tot_row_idx, column=3, value=grand_total_frames).alignment = CENTER
     ws.cell(row=tot_row_idx, column=4, value=duration_str).alignment = CENTER
-    grand_cnt_cell = ws.cell(row=tot_row_idx, column=5, value="=SUM(E6:E8)")
+    grand_cnt_cell = ws.cell(row=tot_row_idx, column=5, value=grand_total_vehicles)
     grand_cnt_cell.alignment = CENTER
     grand_cnt_cell.font = Font(bold=True, size=11, color="1A4A8A")
     for col_i in range(1, 6):
@@ -386,8 +389,8 @@ def generate_batch_report_xlsx(batch_entry, output_path):
         ws.cell(row=curr_r, column=3, value=c2).alignment = CENTER
         ws.cell(row=curr_r, column=4, value=c3).alignment = CENTER
 
-        # Total formula =SUM(B{curr_r}:D{curr_r})
-        tot_c = ws.cell(row=curr_r, column=5, value=f"=SUM(B{curr_r}:D{curr_r})")
+        # Write pre-calculated integer total (not a formula - avoids 0 display in external viewers)
+        tot_c = ws.cell(row=curr_r, column=5, value=row_tot)
         tot_c.alignment = CENTER
         tot_c.font = Font(bold=True, color="1A4A8A", size=10)
         tot_c.fill = PatternFill(start_color="EAF2F8", end_color="EAF2F8", fill_type="solid")
@@ -402,16 +405,23 @@ def generate_batch_report_xlsx(batch_entry, output_path):
 
     # Matrix Grand Total Row
     if all_cat_names:
-        matrix_data_end = curr_r - 1
+        # Pre-calculate all grand totals as integers
+        gt_v1 = sum(cats1.get(c, 0) for c in all_cat_names)
+        gt_v2 = sum(cats2.get(c, 0) for c in all_cat_names)
+        gt_v3 = sum(cats3.get(c, 0) for c in all_cat_names)
+        gt_all = gt_v1 + gt_v2 + gt_v3
         ws.cell(row=curr_r, column=1, value="GRAND TOTAL VEHICLES").font = Font(bold=True, size=11)
-        ws.cell(row=curr_r, column=2, value=f"=SUM(B{matrix_data_start}:B{matrix_data_end})").alignment = CENTER
-        ws.cell(row=curr_r, column=2).font = BOLD
-        ws.cell(row=curr_r, column=3, value=f"=SUM(C{matrix_data_start}:C{matrix_data_end})").alignment = CENTER
-        ws.cell(row=curr_r, column=3).font = BOLD
-        ws.cell(row=curr_r, column=4, value=f"=SUM(D{matrix_data_start}:D{matrix_data_end})").alignment = CENTER
-        ws.cell(row=curr_r, column=4).font = BOLD
+        c2 = ws.cell(row=curr_r, column=2, value=gt_v1)
+        c2.alignment = CENTER
+        c2.font = BOLD
+        c3 = ws.cell(row=curr_r, column=3, value=gt_v2)
+        c3.alignment = CENTER
+        c3.font = BOLD
+        c4 = ws.cell(row=curr_r, column=4, value=gt_v3)
+        c4.alignment = CENTER
+        c4.font = BOLD
 
-        gt_c = ws.cell(row=curr_r, column=5, value=f"=SUM(E{matrix_data_start}:E{matrix_data_end})")
+        gt_c = ws.cell(row=curr_r, column=5, value=gt_all)
         gt_c.alignment = CENTER
         gt_c.font = Font(bold=True, color="FFFFFF", size=11)
         gt_c.fill = BLUE_GROUP_FILL
@@ -511,28 +521,34 @@ def generate_batch_report_xlsx(batch_entry, output_path):
             cell.border = THIN_BORDER
             if cnt_val > 0:
                 cell.font = BOLD
-        # Total per video
-        t_cell = ws_survey.cell(row=r_offset, column=tot_col, value=f"=SUM(B{r_offset}:V{r_offset})")
+        # Total per video (pre-calculated integer, not formula)
+        vid_row_total = sum(get_survey_col_count(c_dict, keys) for _, _, _, keys in SURVEY_21_COLUMNS)
+        t_cell = ws_survey.cell(row=r_offset, column=tot_col, value=vid_row_total)
         t_cell.font = BOLD
         t_cell.alignment = CENTER
         t_cell.border = THIN_BORDER
 
-    # Combined Sum Row in 21-category survey
+    # Combined Sum Row in 21-category survey — pre-calculated integers
     comb_r = 7
     ws_survey.cell(row=comb_r, column=1, value="COMBINED TOTAL (All 3 Videos)").font = Font(bold=True, color="1A4A8A")
     ws_survey.cell(row=comb_r, column=1).fill = PatternFill(start_color="DCE6F1", end_color="DCE6F1", fill_type="solid")
     ws_survey.cell(row=comb_r, column=1).border = THIN_BORDER
 
-    for idx in range(2, len(SURVEY_21_COLUMNS) + 2):
-        col_letter = get_column_letter(idx)
-        cell = ws_survey.cell(row=comb_r, column=idx, value=f"=SUM({col_letter}4:{col_letter}6)")
+    for s_idx, (_, _, _, keys) in enumerate(SURVEY_21_COLUMNS, start=2):
+        combined_val = (get_survey_col_count(cats1, keys) +
+                        get_survey_col_count(cats2, keys) +
+                        get_survey_col_count(cats3, keys))
+        cell = ws_survey.cell(row=comb_r, column=s_idx, value=combined_val)
         cell.alignment = CENTER
         cell.font = BOLD
         cell.border = THIN_BORDER
         cell.fill = PatternFill(start_color="DCE6F1", end_color="DCE6F1", fill_type="solid")
 
-    tot_letter = get_column_letter(tot_col)
-    tot_comb = ws_survey.cell(row=comb_r, column=tot_col, value=f"=SUM({tot_letter}4:{tot_letter}6)")
+    combined_tot_val = sum(
+        get_survey_col_count(cats1, keys) + get_survey_col_count(cats2, keys) + get_survey_col_count(cats3, keys)
+        for _, _, _, keys in SURVEY_21_COLUMNS
+    )
+    tot_comb = ws_survey.cell(row=comb_r, column=tot_col, value=combined_tot_val)
     tot_comb.alignment = CENTER
     tot_comb.font = Font(bold=True, color="FFFFFF")
     tot_comb.fill = BLUE_GROUP_FILL

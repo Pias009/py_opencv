@@ -984,7 +984,7 @@ def batch_worker(batch_id, video_list, settings):
             }
         }
 
-    # Generate Reports
+    # Generate Reports FIRST — before marking done so the frontend always finds files ready
     day_dir = day_results_dir(batch.get("started_at"))
     day = os.path.basename(day_dir)
     xlsx_path = os.path.join(day_dir, f"batch_{batch_id}.xlsx")
@@ -1008,6 +1008,13 @@ def batch_worker(batch_id, video_list, settings):
             json.dump(batch, f, indent=2)
     except Exception:
         pass
+
+    # NOW mark done — reports are already flushed to disk
+    with batches_lock:
+        batch["done"] = True
+        batch["status"] = "cancelled" if batch.get("cancel") else "complete"
+        batch["report_pdf"] = f"/api/report/{day}/batch_{batch_id}.pdf"
+        batch["report_xlsx"] = f"/api/report/{day}/batch_{batch_id}.xlsx"
 
     batch_entry = {
         "id": f"batch_{batch_id}",
