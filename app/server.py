@@ -33,6 +33,9 @@ jobs_lock = threading.Lock()
 url_downloads = {}
 url_downloads_lock = threading.Lock()
 
+batches = {}
+batches_lock = threading.Lock()
+
 
 def day_results_dir(started_at=None):
     """Results folder for a run, grouped by the date it started: data/results/YYYY-MM-DD/."""
@@ -413,6 +416,48 @@ def api_check_url():
         return jsonify({"valid": False, "error": str(e)}), 200
 
 
+def resolve_video_path(raw_str):
+    """Resolves raw path, filename, or relative path to a valid local filepath or returns (None, None)."""
+    if not raw_str:
+        return None, None
+    raw_str = raw_str.strip().strip('"\'<> \t\r\n')
+    candidates = [
+        raw_str,
+        os.path.join(BASE_DIR, raw_str),
+        os.path.join(UPLOAD_DIR, raw_str),
+    ]
+    for c in candidates:
+        if os.path.isfile(c):
+            resolved = os.path.abspath(c)
+            ext = os.path.splitext(resolved)[1].lower()
+            if ext in ALLOWED_EXT:
+                return resolved, os.path.basename(resolved)
+    return None, None
+
+
+@app.route("/api/check_path", methods=["POST"])
+def api_check_path():
+    """Validates local filesystem or repository paths for video files."""
+    data = request.get_json(silent=True) or {}
+    raw_path = (data.get("path") or "").strip().strip('"\'<> \t\r\n')
+    if not raw_path:
+        return jsonify({"valid": False, "error": "Empty path provided"}), 200
+
+    resolved_path, filename = resolve_video_path(raw_path)
+    if not resolved_path:
+        return jsonify({"valid": False, "error": f"Video file not found or unsupported format: '{raw_path}'"}), 200
+
+    sz = os.path.getsize(resolved_path)
+    sz_mb = round(sz / (1024 * 1024), 1)
+    return jsonify({
+        "valid": True,
+        "filename": filename,
+        "path": resolved_path,
+        "size_bytes": sz,
+        "size_formatted": f"{sz_mb} MB"
+    })
+
+
 @app.route("/api/fetch_url", methods=["POST"])
 def api_fetch_url():
     """Starts background streaming download of video from direct URL, Google Drive, or Dropbox."""
@@ -664,6 +709,367 @@ def api_cancel(job_id):
     if not job:
         return jsonify({"error": "Unknown job"}), 404
     job["cancel"] = True
+    return jsonify({"ok": True})
+
+
+def batch_worker(batch_id, video_list, settings):
+    with batches_lock:
+        batch = batches.get(batch_id)
+    if not batch:
+        return
+
+    day_dir = day_results_dir()
+    day = os.path.basename(day_dir)
+    results = []
+
+    for idx, vid_info in enumerate(video_list):
+        with batches_lock:
+            if batch.get("cancel"):
+                break
+            batch["current_index"] = idx
+            vid_info["status"] = "running"
+
+        video_path = vid_info["path"]
+        filename = vid_info["filename"]
+        job_id = f"{batch_id}_{idx}"
+
+        job = {
+            "status": "starting",
+            "video": filename,
+            "cancel": False,
+            "done": False,
+            "last_frame": None,
+            "count": 0,
+            "lines": {},
+            "categories": {},
+            "frame_idx": 0,
+            "total_frames": 0,
+            "vid_stride": settings.get("vid_stride", 2),
+            "line_mode": settings.get("line_mode", "smart_flow"),
+            "invert_direction": settings.get("invert_direction", False),
+            "enable_in": settings.get("enable_in", True),
+            "enable_out": settings.get("enable_out", True),
+            "count_scope_mode": settings.get("count_scope_mode", "active_only"),
+            "enabled_lines": settings.get("enabled_lines", ["North", "South", "West", "East"]),
+            "enabled_lines_in": settings.get("enabled_lines_in"),
+            "enabled_lines_out": settings.get("enabled_lines_out"),
+            "direction_mode": settings.get("direction_mode", "COMING_GOING"),
+            "speed_mode": f"{settings.get('vid_stride', 2)}x Fast-Forward",
+            "reanalyzed": 0,
+            "started_at": time.time(),
+            "batch_id": batch_id,
+            "batch_index": idx,
+        }
+
+        with jobs_lock:
+            jobs[job_id] = job
+
+        with batches_lock:
+            batch["current_job_id"] = job_id
+            vid_info["job_id"] = job_id
+
+        frame_sink = make_frame_sink(job)
+
+        try:
+            import cv2
+            from counter import CountingLine, box_lines, default_lines, vertical_line
+            cap = cv2.VideoCapture(video_path)
+            frame_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 1280
+            frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 720
+            cap.release()
+
+            l_mode = job.get("line_mode", "smart_flow")
+            if l_mode == "smart_flow":
+                lines = [CountingLine("Traffic Flow", 0, int(frame_h * 0.50), frame_w, int(frame_h * 0.50))]
+            elif l_mode == "horizontal":
+                lines = default_lines(frame_w, frame_h)
+            elif l_mode == "dual_gate":
+                from counter import dual_gate_lines
+                lines = dual_gate_lines(frame_w, frame_h)
+            elif l_mode == "vertical":
+                lines = vertical_line(frame_w, frame_h, pct=0.5)
+            else:
+                lines = [CountingLine("Traffic Flow", 0, int(frame_h * 0.50), frame_w, int(frame_h * 0.50))]
+
+            from zero_fault_counter import run_zero_fault_counter
+            run_zero_fault_counter(video_path, job, lines=lines, model_key="bnvd",
+                                   conf_threshold=0.18, imgsz=640, vid_stride=job.get("vid_stride", 2),
+                                   frame_sink=frame_sink)
+        except Exception as e:
+            job["status"] = "error"
+            job["error"] = str(e)
+            job["done"] = True
+
+        day_dir = day_results_dir(job.get("started_at"))
+        day = os.path.basename(day_dir)
+        entry = refresh_reports(job_id, job, day_dir, day)
+        results.append(entry)
+
+        with batches_lock:
+            vid_info["status"] = "complete" if job.get("status") == "complete" else "done"
+            vid_info["count"] = entry.get("count", 0)
+            vid_info["total_frames"] = entry.get("total_frames", 0)
+            vid_info["categories"] = entry.get("categories", {})
+            batch["results"] = list(results)
+
+        cleanup_raw_video(video_path)
+
+        if batch.get("cancel"):
+            break
+
+    # Consolidate results across all processed videos
+    with batches_lock:
+        batch["finished_at"] = time.time()
+        batch["duration_sec"] = round(batch["finished_at"] - batch["started_at"], 2)
+        batch["done"] = True
+        batch["status"] = "cancelled" if batch.get("cancel") else "complete"
+
+        v1_res = results[0] if len(results) > 0 else {}
+        v2_res = results[1] if len(results) > 1 else {}
+        v3_res = results[2] if len(results) > 2 else {}
+
+        cats1 = v1_res.get("categories") or {}
+        cats2 = v2_res.get("categories") or {}
+        cats3 = v3_res.get("categories") or {}
+
+        all_cats = sorted(set(list(cats1.keys()) + list(cats2.keys()) + list(cats3.keys())),
+                          key=lambda k: (cats1.get(k, 0) + cats2.get(k, 0) + cats3.get(k, 0)),
+                          reverse=True)
+
+        gt = (v1_res.get("count", 0) + v2_res.get("count", 0) + v3_res.get("count", 0))
+        denom = gt or 1
+
+        matrix = {}
+        for cat in all_cats:
+            c1 = cats1.get(cat, 0)
+            c2 = cats2.get(cat, 0)
+            c3 = cats3.get(cat, 0)
+            tot = c1 + c2 + c3
+            matrix[cat] = {
+                "video1": c1,
+                "video2": c2,
+                "video3": c3,
+                "total": tot,
+                "share": round((tot / denom) * 100, 1),
+            }
+
+        batch["consolidated"] = {
+            "categories": matrix,
+            "totals": {
+                "video1": v1_res.get("count", 0),
+                "video2": v2_res.get("count", 0),
+                "video3": v3_res.get("count", 0),
+                "grand_total": gt,
+            }
+        }
+
+    # Generate Reports
+    day_dir = day_results_dir(batch.get("started_at"))
+    day = os.path.basename(day_dir)
+    xlsx_path = os.path.join(day_dir, f"batch_{batch_id}.xlsx")
+    pdf_path = os.path.join(day_dir, f"batch_{batch_id}.pdf")
+    json_path = os.path.join(day_dir, f"batch_{batch_id}.json")
+
+    try:
+        from excel_report import generate_batch_report_xlsx
+        generate_batch_report_xlsx(batch, xlsx_path)
+    except Exception as e:
+        print(f"Error generating batch excel: {e}")
+
+    try:
+        from report import generate_batch_report_pdf
+        generate_batch_report_pdf(batch, pdf_path)
+    except Exception as e:
+        print(f"Error generating batch pdf: {e}")
+
+    try:
+        with open(json_path, "w") as f:
+            json.dump(batch, f, indent=2)
+    except Exception:
+        pass
+
+    batch_entry = {
+        "id": f"batch_{batch_id}",
+        "video": f"3-Video Batch ({len(results)} analyzed)",
+        "count": batch["consolidated"]["totals"]["grand_total"],
+        "total_frames": sum(r.get("total_frames", 0) for r in results),
+        "status": batch["status"],
+        "started_at": batch["started_at"],
+        "finished_at": batch["finished_at"],
+        "duration_sec": batch["duration_sec"],
+        "date_dir": day,
+        "is_batch": True,
+    }
+    save_history_entry(batch_entry)
+
+
+@app.route("/api/batch/start", methods=["POST"])
+def api_batch_start():
+    data = request.get_json(silent=True) or {}
+    if not data:
+        data = request.form.to_dict()
+
+    raw_videos = data.get("videos") or []
+    if isinstance(raw_videos, str):
+        try:
+            raw_videos = json.loads(raw_videos)
+        except Exception:
+            raw_videos = [v.strip() for v in raw_videos.split(",") if v.strip()]
+
+    if not raw_videos:
+        for k in ["video1", "video2", "video3", "path1", "path2", "path3"]:
+            if data.get(k):
+                raw_videos.append(data.get(k))
+
+    if not raw_videos:
+        return jsonify({"error": "No videos provided for batch analysis. Please specify 3 video paths."}), 400
+
+    resolved_videos = []
+    for idx, raw_v in enumerate(raw_videos, start=1):
+        path, fname = resolve_video_path(raw_v)
+        if not path:
+            return jsonify({"error": f"Video {idx} could not be found: '{raw_v}'. Please check the path."}), 400
+        resolved_videos.append({
+            "index": idx,
+            "path": path,
+            "filename": fname,
+            "status": "pending",
+            "count": 0,
+            "total_frames": 0,
+        })
+
+    speed_val = data.get("speed", "2")
+    try:
+        vid_stride = int(speed_val)
+        if vid_stride < 1 or vid_stride > 5:
+            vid_stride = 2
+    except ValueError:
+        vid_stride = 2
+
+    line_mode = data.get("line_mode", "smart_flow")
+    invert_direction = str(data.get("invert", "false")).lower() == "true"
+    enable_in = str(data.get("enable_in", "true")).lower() == "true"
+    enable_out = str(data.get("enable_out", "true")).lower() == "true"
+    count_scope_mode = data.get("count_scope_mode", "active_only")
+    direction_mode = data.get("direction_mode", "COMING_GOING")
+
+    enabled_lines_raw = data.get("enabled_lines", "North,South,West,East")
+    if isinstance(enabled_lines_raw, list):
+        enabled_lines = enabled_lines_raw
+    else:
+        enabled_lines = [x.strip() for x in str(enabled_lines_raw).split(",") if x.strip()]
+
+    raw_in = data.get("enabled_lines_in")
+    enabled_lines_in = [x.strip() for x in str(raw_in).split(",") if x.strip()] if raw_in else None
+
+    raw_out = data.get("enabled_lines_out")
+    enabled_lines_out = [x.strip() for x in str(raw_out).split(",") if x.strip()] if raw_out else None
+
+    settings = {
+        "vid_stride": vid_stride,
+        "line_mode": line_mode,
+        "invert_direction": invert_direction,
+        "enable_in": enable_in,
+        "enable_out": enable_out,
+        "count_scope_mode": count_scope_mode,
+        "direction_mode": direction_mode,
+        "enabled_lines": enabled_lines,
+        "enabled_lines_in": enabled_lines_in,
+        "enabled_lines_out": enabled_lines_out,
+    }
+
+    batch_id = uuid.uuid4().hex
+    batch = {
+        "id": batch_id,
+        "status": "starting",
+        "current_index": 0,
+        "total_videos": len(resolved_videos),
+        "videos": resolved_videos,
+        "current_job_id": None,
+        "results": [],
+        "consolidated": {},
+        "cancel": False,
+        "done": False,
+        "started_at": time.time(),
+        "finished_at": None,
+        "duration_sec": 0,
+        "error": None,
+    }
+
+    with batches_lock:
+        batches[batch_id] = batch
+
+    t = threading.Thread(target=batch_worker, args=(batch_id, resolved_videos, settings), daemon=True)
+    t.start()
+
+    return jsonify({"batch_id": batch_id})
+
+
+@app.route("/api/batch/status/<batch_id>")
+def api_batch_status(batch_id):
+    with batches_lock:
+        batch = batches.get(batch_id)
+    if not batch:
+        return jsonify({"error": "Unknown batch ID"}), 404
+
+    cur_job_id = batch.get("current_job_id")
+    cur_job = None
+    if cur_job_id:
+        with jobs_lock:
+            cur_job = jobs.get(cur_job_id)
+
+    cur_progress = 0
+    if cur_job and cur_job.get("total_frames"):
+        cur_progress = round(100 * cur_job.get("frame_idx", 0) / cur_job["total_frames"], 1)
+
+    day = time.strftime("%Y-%m-%d", time.localtime(batch.get("started_at") or time.time()))
+    report_pdf_url = None
+    report_xlsx_url = None
+    if batch.get("done"):
+        pdf_path = os.path.join(RESULTS_DIR, day, f"batch_{batch_id}.pdf")
+        xlsx_path = os.path.join(RESULTS_DIR, day, f"batch_{batch_id}.xlsx")
+        if os.path.exists(pdf_path):
+            report_pdf_url = f"/api/report/{day}/batch_{batch_id}.pdf"
+        if os.path.exists(xlsx_path):
+            report_xlsx_url = f"/api/report/{day}/batch_{batch_id}.xlsx"
+
+    return jsonify({
+        "batch_id": batch_id,
+        "status": batch.get("status"),
+        "done": batch.get("done", False),
+        "current_index": batch.get("current_index", 0),
+        "total_videos": batch.get("total_videos", 0),
+        "videos": batch.get("videos", []),
+        "current_job_id": cur_job_id,
+        "current_job": {
+            "video": cur_job.get("video") if cur_job else None,
+            "count": cur_job.get("count", 0) if cur_job else 0,
+            "frame_idx": cur_job.get("frame_idx", 0) if cur_job else 0,
+            "total_frames": cur_job.get("total_frames", 0) if cur_job else 0,
+            "progress": cur_progress,
+            "categories": cur_job.get("categories", {}) if cur_job else {},
+            "lines": cur_job.get("lines", {}) if cur_job else {},
+        } if cur_job else None,
+        "results": batch.get("results", []),
+        "consolidated": batch.get("consolidated", {}),
+        "report_pdf": report_pdf_url,
+        "report_xlsx": report_xlsx_url,
+        "error": batch.get("error"),
+    })
+
+
+@app.route("/api/batch/cancel/<batch_id>", methods=["POST"])
+def api_batch_cancel(batch_id):
+    with batches_lock:
+        batch = batches.get(batch_id)
+    if not batch:
+        return jsonify({"error": "Unknown batch ID"}), 404
+    batch["cancel"] = True
+    cur_job_id = batch.get("current_job_id")
+    if cur_job_id:
+        with jobs_lock:
+            if cur_job_id in jobs:
+                jobs[cur_job_id]["cancel"] = True
     return jsonify({"ok": True})
 
 

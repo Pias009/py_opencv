@@ -265,3 +265,312 @@ def generate_report_xlsx(entry, output_path):
 
     wb.save(output_path)
     return output_path
+
+
+def generate_batch_report_xlsx(batch_entry, output_path):
+    """Build an Excel (.xlsx) consolidated summary for a 3-video batch run.
+
+    batch_entry contains:
+      - videos: list of video metadata dicts
+      - results: list of individual video results (categories, lines, counts, etc.)
+      - consolidated: category matrix and grand totals
+    """
+    wb = Workbook()
+
+    results = batch_entry.get("results") or []
+    v1_res = results[0] if len(results) > 0 else {}
+    v2_res = results[1] if len(results) > 1 else {}
+    v3_res = results[2] if len(results) > 2 else {}
+
+    v1_name = v1_res.get("video") or "Video 1"
+    v2_name = v2_res.get("video") or "Video 2"
+    v3_name = v3_res.get("video") or "Video 3"
+
+    # --- Sheet 1: Consolidated Result Sheet ---
+    ws = wb.active
+    ws.title = "Consolidated Result Sheet"
+    ws.views.sheetView[0].showGridLines = True
+
+    when = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(batch_entry.get("started_at") or time.time()))
+    duration = batch_entry.get("duration_sec")
+    duration_str = f"{duration:.1f} s" if duration is not None else "-"
+
+    ws["A1"] = "3-Video Batch Consolidated Traffic Count Report"
+    ws["A1"].font = Font(bold=True, size=16, color="1A4A8A")
+    ws["A2"] = f"Generated: {when}  |  Total Batch Duration: {duration_str}"
+    ws["A2"].font = Font(italic=True, color="666666", size=10)
+
+    # Video Overview Table
+    ws.cell(row=4, column=1, value="Video Overview").font = Font(bold=True, size=12)
+    vid_headers = ["Video Source", "Filename", "Total Frames", "Processing Time", "Total Vehicles Counted"]
+    for c, h in enumerate(vid_headers, start=1):
+        cell = ws.cell(row=5, column=c, value=h)
+        cell.fill = HEADER_FILL
+        cell.font = HEADER_FONT
+        cell.alignment = CENTER
+        cell.border = THIN_BORDER
+
+    vid_rows = [
+        ("Video 1", v1_name, v1_res.get("total_frames", "-"), f"{v1_res.get('duration_sec', 0):.1f} s" if v1_res.get("duration_sec") else "-", v1_res.get("count", 0)),
+        ("Video 2", v2_name, v2_res.get("total_frames", "-"), f"{v2_res.get('duration_sec', 0):.1f} s" if v2_res.get("duration_sec") else "-", v2_res.get("count", 0)),
+        ("Video 3", v3_name, v3_res.get("total_frames", "-"), f"{v3_res.get('duration_sec', 0):.1f} s" if v3_res.get("duration_sec") else "-", v3_res.get("count", 0)),
+    ]
+
+    for idx, (v_label, fn, tf, dur, cnt) in enumerate(vid_rows, start=6):
+        ws.cell(row=idx, column=1, value=v_label).font = BOLD
+        ws.cell(row=idx, column=2, value=fn)
+        ws.cell(row=idx, column=3, value=tf).alignment = CENTER
+        ws.cell(row=idx, column=4, value=dur).alignment = CENTER
+        c_cnt = ws.cell(row=idx, column=5, value=cnt)
+        c_cnt.alignment = CENTER
+        c_cnt.font = BOLD
+        for col_i in range(1, 6):
+            ws.cell(row=idx, column=col_i).border = THIN_BORDER
+
+    # Overview Total Row
+    tot_row_idx = 9
+    ws.cell(row=tot_row_idx, column=1, value="COMBINED ALL VIDEOS").font = BOLD
+    ws.cell(row=tot_row_idx, column=2, value=f"{len(results)} Videos Processed")
+    ws.cell(row=tot_row_idx, column=3, value="=SUM(C6:C8)").alignment = CENTER
+    ws.cell(row=tot_row_idx, column=4, value=duration_str).alignment = CENTER
+    grand_cnt_cell = ws.cell(row=tot_row_idx, column=5, value="=SUM(E6:E8)")
+    grand_cnt_cell.alignment = CENTER
+    grand_cnt_cell.font = Font(bold=True, size=11, color="1A4A8A")
+    for col_i in range(1, 6):
+        ws.cell(row=tot_row_idx, column=col_i).border = THIN_BORDER
+        ws.cell(row=tot_row_idx, column=col_i).fill = PatternFill(start_color="EAEEF3", end_color="EAEEF3", fill_type="solid")
+
+    # --- Vehicle Category Matrix Table ---
+    matrix_start_row = 12
+    ws.cell(row=matrix_start_row - 1, column=1, value="Consolidated Vehicle Counting Matrix (All 3 Videos)").font = Font(bold=True, size=12)
+
+    matrix_headers = [
+        "Vehicle Category",
+        f"Video 1\n({v1_name[:18]})",
+        f"Video 2\n({v2_name[:18]})",
+        f"Video 3\n({v3_name[:18]})",
+        "Total (All 3 Videos)",
+        "Share (%)"
+    ]
+
+    for c, h in enumerate(matrix_headers, start=1):
+        cell = ws.cell(row=matrix_start_row, column=c, value=h)
+        cell.fill = BLUE_GROUP_FILL if c == 5 else HEADER_FILL
+        cell.font = HEADER_FONT
+        cell.alignment = CENTER
+        cell.border = THIN_BORDER
+    ws.row_dimensions[matrix_start_row].height = 28
+
+    # Extract all unique categories across all 3 videos
+    cats1 = v1_res.get("categories") or {}
+    cats2 = v2_res.get("categories") or {}
+    cats3 = v3_res.get("categories") or {}
+    all_cat_names = sorted(set(list(cats1.keys()) + list(cats2.keys()) + list(cats3.keys())),
+                           key=lambda k: (cats1.get(k, 0) + cats2.get(k, 0) + cats3.get(k, 0)),
+                           reverse=True)
+
+    curr_r = matrix_start_row + 1
+    matrix_data_start = curr_r
+
+    grand_total_count = (v1_res.get("count", 0) + v2_res.get("count", 0) + v3_res.get("count", 0)) or 1
+
+    for cat in all_cat_names:
+        c1 = cats1.get(cat, 0)
+        c2 = cats2.get(cat, 0)
+        c3 = cats3.get(cat, 0)
+        row_tot = c1 + c2 + c3
+        share = round((row_tot / grand_total_count) * 100, 1)
+
+        ws.cell(row=curr_r, column=1, value=cat).font = BOLD
+        ws.cell(row=curr_r, column=2, value=c1).alignment = CENTER
+        ws.cell(row=curr_r, column=3, value=c2).alignment = CENTER
+        ws.cell(row=curr_r, column=4, value=c3).alignment = CENTER
+
+        # Total formula =SUM(B{curr_r}:D{curr_r})
+        tot_c = ws.cell(row=curr_r, column=5, value=f"=SUM(B{curr_r}:D{curr_r})")
+        tot_c.alignment = CENTER
+        tot_c.font = Font(bold=True, color="1A4A8A", size=10)
+        tot_c.fill = PatternFill(start_color="EAF2F8", end_color="EAF2F8", fill_type="solid")
+
+        sh_c = ws.cell(row=curr_r, column=6, value=f"{share:.1f}%")
+        sh_c.alignment = CENTER
+
+        for col_i in range(1, 7):
+            ws.cell(row=curr_r, column=col_i).border = THIN_BORDER
+
+        curr_r += 1
+
+    # Matrix Grand Total Row
+    if all_cat_names:
+        matrix_data_end = curr_r - 1
+        ws.cell(row=curr_r, column=1, value="GRAND TOTAL VEHICLES").font = Font(bold=True, size=11)
+        ws.cell(row=curr_r, column=2, value=f"=SUM(B{matrix_data_start}:B{matrix_data_end})").alignment = CENTER
+        ws.cell(row=curr_r, column=2).font = BOLD
+        ws.cell(row=curr_r, column=3, value=f"=SUM(C{matrix_data_start}:C{matrix_data_end})").alignment = CENTER
+        ws.cell(row=curr_r, column=3).font = BOLD
+        ws.cell(row=curr_r, column=4, value=f"=SUM(D{matrix_data_start}:D{matrix_data_end})").alignment = CENTER
+        ws.cell(row=curr_r, column=4).font = BOLD
+
+        gt_c = ws.cell(row=curr_r, column=5, value=f"=SUM(E{matrix_data_start}:E{matrix_data_end})")
+        gt_c.alignment = CENTER
+        gt_c.font = Font(bold=True, color="FFFFFF", size=11)
+        gt_c.fill = BLUE_GROUP_FILL
+
+        ws.cell(row=curr_r, column=6, value="100.0%").alignment = CENTER
+        ws.cell(row=curr_r, column=6).font = BOLD
+
+        for col_i in range(1, 7):
+            ws.cell(row=curr_r, column=col_i).border = THIN_BORDER
+            if col_i < 5 or col_i == 6:
+                ws.cell(row=curr_r, column=col_i).fill = PatternFill(start_color="DCE6F1", end_color="DCE6F1", fill_type="solid")
+
+    _autosize(ws)
+
+    # --- Sheet 2: 21-Category Combined Survey (Official Table) ---
+    ws_survey = wb.create_sheet("21-Category Combined Survey")
+    ws_survey.views.sheetView[0].showGridLines = True
+    ws_survey.row_dimensions[1].height = 28
+    ws_survey.row_dimensions[2].height = 42
+    ws_survey.row_dimensions[3].height = 22
+
+    ws_survey.cell(row=1, column=1, value="Video / Run").fill = BLUE_GROUP_FILL
+    ws_survey.cell(row=1, column=1).font = Font(color="FFFFFF", bold=True, size=10)
+    ws_survey.cell(row=1, column=1).alignment = CENTER
+    ws_survey.merge_cells("A1:A3")
+
+    groups = [
+        ("Freight Vehicles", 2, 4),
+        ("Motorized Vehicles (Bus)", 5, 11),
+        ("Motorized Vehicles", 12, 19),
+        ("Non-Motorized Vehicles", 20, 22),
+    ]
+    for grp_title, start_c, end_c in groups:
+        cell = ws_survey.cell(row=1, column=start_c, value=grp_title)
+        cell.fill = BLUE_GROUP_FILL
+        cell.font = Font(color="FFFFFF", bold=True, size=11)
+        cell.alignment = CENTER
+        if end_c > start_c:
+            ws_survey.merge_cells(start_row=1, start_column=start_c, end_row=1, end_column=end_c)
+        for col_idx in range(start_c, end_c + 1):
+            ws_survey.cell(row=1, column=col_idx).fill = BLUE_GROUP_FILL
+
+    for idx, (num, _, col_name, _) in enumerate(SURVEY_21_COLUMNS, start=2):
+        c2 = ws_survey.cell(row=2, column=idx, value=col_name)
+        c2.fill = BLUE_COL_FILL
+        c2.font = WHITE_BOLD
+        c2.alignment = CENTER
+        c2.border = THIN_BORDER
+
+        c3 = ws_survey.cell(row=3, column=idx, value=num)
+        c3.fill = BLUE_NUM_FILL
+        c3.font = WHITE_NUM
+        c3.alignment = CENTER
+        c3.border = THIN_BORDER
+        ws_survey.column_dimensions[get_column_letter(idx)].width = 13
+
+    tot_col = len(SURVEY_21_COLUMNS) + 2
+    c1 = ws_survey.cell(row=1, column=tot_col, value="Total")
+    c1.fill = BLUE_GROUP_FILL
+    c1.font = Font(color="FFFFFF", bold=True, size=11)
+    c1.alignment = CENTER
+
+    c2 = ws_survey.cell(row=2, column=tot_col, value="Total\nVehicles")
+    c2.fill = BLUE_COL_FILL
+    c2.font = WHITE_BOLD
+    c2.alignment = CENTER
+    c2.border = THIN_BORDER
+
+    c3 = ws_survey.cell(row=3, column=tot_col, value="ALL")
+    c3.fill = BLUE_NUM_FILL
+    c3.font = WHITE_NUM
+    c3.alignment = CENTER
+    c3.border = THIN_BORDER
+    ws_survey.column_dimensions[get_column_letter(tot_col)].width = 14
+    ws_survey.column_dimensions["A"].width = 24
+
+    def get_survey_col_count(cats_dict, mapped_keys):
+        tot = 0
+        for k in mapped_keys:
+            if k in cats_dict:
+                tot += cats_dict[k]
+        return tot
+
+    survey_rows_data = [
+        (f"Video 1 ({v1_name[:15]})", cats1),
+        (f"Video 2 ({v2_name[:15]})", cats2),
+        (f"Video 3 ({v3_name[:15]})", cats3),
+    ]
+
+    for r_offset, (label, c_dict) in enumerate(survey_rows_data, start=4):
+        ws_survey.cell(row=r_offset, column=1, value=label).font = BOLD
+        ws_survey.cell(row=r_offset, column=1).border = THIN_BORDER
+        for idx, (_, _, _, keys) in enumerate(SURVEY_21_COLUMNS, start=2):
+            cnt_val = get_survey_col_count(c_dict, keys)
+            cell = ws_survey.cell(row=r_offset, column=idx, value=cnt_val)
+            cell.alignment = CENTER
+            cell.border = THIN_BORDER
+            if cnt_val > 0:
+                cell.font = BOLD
+        # Total per video
+        t_cell = ws_survey.cell(row=r_offset, column=tot_col, value=f"=SUM(B{r_offset}:V{r_offset})")
+        t_cell.font = BOLD
+        t_cell.alignment = CENTER
+        t_cell.border = THIN_BORDER
+
+    # Combined Sum Row in 21-category survey
+    comb_r = 7
+    ws_survey.cell(row=comb_r, column=1, value="COMBINED TOTAL (All 3 Videos)").font = Font(bold=True, color="1A4A8A")
+    ws_survey.cell(row=comb_r, column=1).fill = PatternFill(start_color="DCE6F1", end_color="DCE6F1", fill_type="solid")
+    ws_survey.cell(row=comb_r, column=1).border = THIN_BORDER
+
+    for idx in range(2, len(SURVEY_21_COLUMNS) + 2):
+        col_letter = get_column_letter(idx)
+        cell = ws_survey.cell(row=comb_r, column=idx, value=f"=SUM({col_letter}4:{col_letter}6)")
+        cell.alignment = CENTER
+        cell.font = BOLD
+        cell.border = THIN_BORDER
+        cell.fill = PatternFill(start_color="DCE6F1", end_color="DCE6F1", fill_type="solid")
+
+    tot_letter = get_column_letter(tot_col)
+    tot_comb = ws_survey.cell(row=comb_r, column=tot_col, value=f"=SUM({tot_letter}4:{tot_letter}6)")
+    tot_comb.alignment = CENTER
+    tot_comb.font = Font(bold=True, color="FFFFFF")
+    tot_comb.fill = BLUE_GROUP_FILL
+    tot_comb.border = THIN_BORDER
+
+    # --- Sheets 3, 4, 5: Individual Video Detail Sheets ---
+    for v_idx, v_res in enumerate(results, start=1):
+        v_title = f"Video {v_idx} Details"
+        ws_v = wb.create_sheet(v_title)
+        ws_v["A1"] = f"Detail Report for Video {v_idx}: {v_res.get('video', '-')}"
+        ws_v["A1"].font = Font(bold=True, size=14)
+
+        info_rows = [
+            ("Filename", v_res.get("video", "-")),
+            ("Total frames", v_res.get("total_frames", "-")),
+            ("Processing time", f"{v_res.get('duration_sec', 0):.1f} s" if v_res.get("duration_sec") else "-"),
+            ("Total vehicles counted", v_res.get("count", 0)),
+        ]
+        for r_i, (lbl, val) in enumerate(info_rows, start=3):
+            ws_v.cell(row=r_i, column=1, value=lbl).font = BOLD
+            ws_v.cell(row=r_i, column=2, value=val)
+
+        # Categories table
+        ws_v.cell(row=8, column=1, value="Vehicle Categories").font = Font(bold=True, size=11)
+        ws_v.cell(row=9, column=1, value="Category").fill = HEADER_FILL
+        ws_v.cell(row=9, column=1).font = HEADER_FONT
+        ws_v.cell(row=9, column=2, value="Count").fill = HEADER_FILL
+        ws_v.cell(row=9, column=2).font = HEADER_FONT
+
+        v_cats = v_res.get("categories") or {}
+        r_c = 10
+        for c_name, c_num in sorted(v_cats.items(), key=lambda kv: -kv[1]):
+            ws_v.cell(row=r_c, column=1, value=c_name)
+            ws_v.cell(row=r_c, column=2, value=c_num)
+            r_c += 1
+
+        _autosize(ws_v)
+
+    wb.save(output_path)
+    return output_path
+

@@ -34,11 +34,27 @@ const newVideoBtn = document.getElementById("new-video-btn");
 
 const historyBody = document.getElementById("history-body");
 
-// Video Source Selection & Cloud URL Elements
+// Video Source Selection & Batch Elements
+const tabBatchBtn = document.getElementById("tab-batch-btn");
 const tabFileBtn = document.getElementById("tab-file-btn");
 const tabUrlBtn = document.getElementById("tab-url-btn");
+const sourceBatchSection = document.getElementById("source-batch-section");
 const sourceFileSection = document.getElementById("source-file-section");
 const sourceUrlSection = document.getElementById("source-url-section");
+const batchBuildBtn = document.getElementById("batch-build-btn");
+const batchStepperBar = document.getElementById("batch-stepper-bar");
+const batchReportContainer = document.getElementById("batch-report-container");
+const batchGrandTotalDisplay = document.getElementById("batch-grand-total-display");
+const batchMatrixBody = document.getElementById("batch-matrix-body");
+const batchMatrixFoot = document.getElementById("batch-matrix-foot");
+const thVideo1 = document.getElementById("th-video-1");
+const thVideo2 = document.getElementById("th-video-2");
+const thVideo3 = document.getElementById("th-video-3");
+const reportMainTitle = document.getElementById("report-main-title");
+const reportMainSub = document.getElementById("report-main-sub");
+const pdfBtnLabel = document.getElementById("pdf-btn-label");
+const xlsxBtnLabel = document.getElementById("xlsx-btn-label");
+
 const videoUrlInput = document.getElementById("video-url-input");
 const urlClearBtn = document.getElementById("url-clear-btn");
 const urlPasteBtn = document.getElementById("url-paste-btn");
@@ -59,7 +75,9 @@ const uploadRetryWarning = document.getElementById("upload-retry-warning");
 const retryChunkNum = document.getElementById("retry-chunk-num");
 const retryAttemptNum = document.getElementById("retry-attempt-num");
 
-let currentSourceTab = "file"; // 'file' or 'url'
+let currentSourceTab = "batch"; // 'batch', 'file', or 'url'
+let currentBatchId = null;
+let batchPollTimer = null;
 
 const speedMap = {
   "1": "1x Realtime",
@@ -173,12 +191,29 @@ function updateProgressCard(opts) {
 let checkUrlTimer = null;
 let resolvedCloudMetadata = null;
 
+function switchToBatchTab() {
+  currentSourceTab = "batch";
+  if (tabBatchBtn) tabBatchBtn.classList.add("active");
+  if (tabFileBtn) tabFileBtn.classList.remove("active");
+  if (tabUrlBtn) tabUrlBtn.classList.remove("active");
+  if (sourceBatchSection) sourceBatchSection.hidden = false;
+  if (sourceFileSection) sourceFileSection.hidden = true;
+  if (sourceUrlSection) sourceUrlSection.hidden = true;
+  if (batchBuildBtn) batchBuildBtn.style.display = "flex";
+  if (startBtn) startBtn.style.display = "none";
+  clearError();
+}
+
 function switchToUrlTab(urlVal) {
   currentSourceTab = "url";
   if (tabUrlBtn) tabUrlBtn.classList.add("active");
+  if (tabBatchBtn) tabBatchBtn.classList.remove("active");
   if (tabFileBtn) tabFileBtn.classList.remove("active");
   if (sourceFileSection) sourceFileSection.hidden = true;
+  if (sourceBatchSection) sourceBatchSection.hidden = true;
   if (sourceUrlSection) sourceUrlSection.hidden = false;
+  if (batchBuildBtn) batchBuildBtn.style.display = "none";
+  if (startBtn) startBtn.style.display = "flex";
   clearError();
 
   if (urlVal && videoUrlInput) {
@@ -191,14 +226,163 @@ function switchToUrlTab(urlVal) {
 function switchToFileTab() {
   currentSourceTab = "file";
   if (tabFileBtn) tabFileBtn.classList.add("active");
+  if (tabBatchBtn) tabBatchBtn.classList.remove("active");
   if (tabUrlBtn) tabUrlBtn.classList.remove("active");
   if (sourceFileSection) sourceFileSection.hidden = false;
+  if (sourceBatchSection) sourceBatchSection.hidden = true;
   if (sourceUrlSection) sourceUrlSection.hidden = true;
+  if (batchBuildBtn) batchBuildBtn.style.display = "none";
+  if (startBtn) startBtn.style.display = "flex";
   clearError();
 }
 
+if (tabBatchBtn) tabBatchBtn.addEventListener("click", switchToBatchTab);
 if (tabFileBtn) tabFileBtn.addEventListener("click", switchToFileTab);
 if (tabUrlBtn) tabUrlBtn.addEventListener("click", () => switchToUrlTab());
+
+const batchDebounceTimers = {};
+
+async function checkBatchPath(targetIndex) {
+  const input = document.getElementById(`batch-path-${targetIndex}`);
+  const statusBadge = document.getElementById(`batch-status-${targetIndex}`);
+  const card = document.getElementById(`batch-card-${targetIndex}`);
+  const raw = (input ? input.value : "").trim();
+  if (!raw) {
+    if (statusBadge) {
+      statusBadge.textContent = "Not selected";
+      statusBadge.className = "batch-box-status";
+    }
+    if (card) card.classList.remove("verified");
+    return null;
+  }
+
+  if (statusBadge) {
+    statusBadge.textContent = "Checking…";
+    statusBadge.className = "batch-box-status";
+  }
+
+  try {
+    const res = await fetch("/api/check_path", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: raw })
+    });
+    const data = await res.json();
+    if (data.valid) {
+      if (statusBadge) {
+        statusBadge.textContent = `🟢 Ready: ${data.size_formatted}`;
+        statusBadge.className = "batch-box-status verified";
+      }
+      if (card) card.classList.add("verified");
+      clearError();
+      return data.path;
+    } else {
+      if (statusBadge) {
+        statusBadge.textContent = "⚠️ Not found";
+        statusBadge.className = "batch-box-status error";
+      }
+      if (card) card.classList.remove("verified");
+      return null;
+    }
+  } catch (e) {
+    if (statusBadge) {
+      statusBadge.textContent = "Check error";
+      statusBadge.className = "batch-box-status error";
+    }
+    return null;
+  }
+}
+
+function initBatchBoxListeners() {
+  [1, 2, 3].forEach(idx => {
+    const input = document.getElementById(`batch-path-${idx}`);
+    if (input) {
+      input.addEventListener("input", () => {
+        clearTimeout(batchDebounceTimers[idx]);
+        batchDebounceTimers[idx] = setTimeout(() => checkBatchPath(idx), 400);
+      });
+      input.addEventListener("blur", () => checkBatchPath(idx));
+    }
+  });
+
+  document.querySelectorAll(".batch-browse-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const idx = btn.getAttribute("data-target");
+      const fileInp = document.getElementById(`batch-file-input-${idx}`);
+      if (fileInp) fileInp.click();
+    });
+  });
+
+  document.querySelectorAll(".batch-hidden-file").forEach(inp => {
+    inp.addEventListener("change", async () => {
+      const idMatch = inp.id.match(/\d+$/);
+      if (!idMatch) return;
+      const idx = idMatch[0];
+      const file = inp.files[0];
+      if (!file) return;
+
+      const pathInput = document.getElementById(`batch-path-${idx}`);
+      const statusBadge = document.getElementById(`batch-status-${idx}`);
+      const card = document.getElementById(`batch-card-${idx}`);
+
+      if (statusBadge) {
+        statusBadge.textContent = "Uploading…";
+        statusBadge.className = "batch-box-status";
+      }
+
+      try {
+        const uploadedPath = await uploadFileInChunks(file, (pct) => {
+          if (statusBadge) statusBadge.textContent = `Uploading ${pct}%…`;
+        });
+        if (pathInput) pathInput.value = uploadedPath;
+        if (statusBadge) {
+          statusBadge.textContent = `🟢 Ready: ${(file.size / (1024 * 1024)).toFixed(1)} MB`;
+          statusBadge.className = "batch-box-status verified";
+        }
+        if (card) card.classList.add("verified");
+        clearError();
+      } catch (e) {
+        if (statusBadge) {
+          statusBadge.textContent = "Upload failed";
+          statusBadge.className = "batch-box-status error";
+        }
+        showError(`Failed to upload ${file.name}: ${e.message}`);
+      }
+    });
+  });
+
+  document.querySelectorAll(".batch-sample-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const idx = btn.getAttribute("data-target");
+      const sampleVal = btn.getAttribute("data-sample");
+      const pathInput = document.getElementById(`batch-path-${idx}`);
+      if (pathInput) {
+        pathInput.value = sampleVal;
+        checkBatchPath(idx);
+      }
+    });
+  });
+
+  document.querySelectorAll(".batch-clear-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const idx = btn.getAttribute("data-target");
+      const pathInput = document.getElementById(`batch-path-${idx}`);
+      const fileInp = document.getElementById(`batch-file-input-${idx}`);
+      const statusBadge = document.getElementById(`batch-status-${idx}`);
+      const card = document.getElementById(`batch-card-${idx}`);
+      if (pathInput) pathInput.value = "";
+      if (fileInp) fileInp.value = "";
+      if (statusBadge) {
+        statusBadge.textContent = "Not selected";
+        statusBadge.className = "batch-box-status";
+      }
+      if (card) card.classList.remove("verified");
+    });
+  });
+}
+
+// Call on startup
+initBatchBoxListeners();
 
 async function inspectAndVerifyUrl(rawUrl) {
   clearTimeout(checkUrlTimer);
@@ -1162,7 +1346,333 @@ async function pollStatus() {
   }
 }
 
+const CATEGORY_ICONS = {
+  "Bus": "🚌",
+  "Large Bus": "🚌",
+  "Mini Bus": "🚐",
+  "Bus / Mini Bus": "🚌",
+  "Car": "🚗",
+  "Private Car": "🚗",
+  "Sedan": "🚗",
+  "Sedan / Private Car": "🚗",
+  "Microbus": "🚐",
+  "Pickup": "🛻",
+  "SUV": "🚙",
+  "Jeep": "🚙",
+  "Jeep / Pickup / SUV": "🚙",
+  "Truck": "🚚",
+  "Medium Truck": "🚚",
+  "Heavy Truck": "🚛",
+  "Heavy Truck / Container": "🚛",
+  "Covered Van": "🚐",
+  "Motorcycle": "🏍️",
+  "Motorbike": "🏍️",
+  "CNG": "🛺",
+  "Three-Wheeler (CNG)": "🛺",
+  "Auto": "🛺",
+  "Rickshaw": "🚲",
+  "Rickshaw / Van": "🚲",
+  "Motorized Rickshaw": "🛺",
+  "Easybike": "🛺",
+  "Bicycle": "🚲",
+  "Human Hauler": "🚐",
+  "Leguna": "🚐",
+  "Thela Gari": "🛒",
+};
+
+function getCategoryIcon(name) {
+  return CATEGORY_ICONS[name] || "🚗";
+}
+
+function resetBatchBuildBtn() {
+  if (!batchBuildBtn) return;
+  batchBuildBtn.disabled = false;
+  batchBuildBtn.innerHTML = `
+    <div class="btn-inner-content">
+      <span class="btn-icon">🔨</span>
+      <div class="btn-text-group">
+        <span class="btn-main-title">BUILD &amp; RUN 3-VIDEO AUTO ANALYSIS</span>
+        <span class="btn-sub-title">Auto-Analyze Video 1 ➔ Video 2 ➔ Video 3 Sequentially &amp; Build 1 Consolidated Result Sheet</span>
+      </div>
+    </div>`;
+}
+
+async function startBatchJob() {
+  clearError();
+  const p1 = (document.getElementById("batch-path-1")?.value || "").trim();
+  const p2 = (document.getElementById("batch-path-2")?.value || "").trim();
+  const p3 = (document.getElementById("batch-path-3")?.value || "").trim();
+
+  if (!p1 || !p2 || !p3) {
+    showError("Please specify all 3 video paths in Box 1, Box 2, and Box 3 (or click the Sample buttons).");
+    return;
+  }
+
+  if (batchBuildBtn) {
+    batchBuildBtn.disabled = true;
+    batchBuildBtn.innerHTML = `
+      <div class="btn-inner-content">
+        <span class="btn-icon">⏳</span>
+        <div class="btn-text-group">
+          <span class="btn-main-title">BUILDING 3-VIDEO BATCH PIPELINE…</span>
+          <span class="btn-sub-title">Validating video files and initializing sequential AI engine</span>
+        </div>
+      </div>`;
+  }
+
+  const speedSelect = document.getElementById("speed-select");
+  const lineModeSelect = document.getElementById("line-mode-select");
+  const directionModeSelect = document.getElementById("direction-mode-select");
+  const toggleIn = document.getElementById("toggle-in");
+  const toggleOut = document.getElementById("toggle-out");
+  const countScopeRadio = document.querySelector('input[name="count_scope_mode"]:checked');
+
+  const speed = speedSelect ? speedSelect.value : "2";
+  const lineMode = lineModeSelect ? lineModeSelect.value : "smart_flow";
+  const directionMode = directionModeSelect ? directionModeSelect.value : "COMING_GOING";
+  const enableIn = toggleIn ? toggleIn.checked : true;
+  const enableOut = toggleOut ? toggleOut.checked : true;
+  const countScopeMode = countScopeRadio ? countScopeRadio.value : "active_only";
+
+  const enabledLinesIn = Array.from(document.querySelectorAll(".line-in-check:checked")).map(c => c.value);
+  const enabledLinesOut = Array.from(document.querySelectorAll(".line-out-check:checked")).map(c => c.value);
+  const allEnabledLines = Array.from(new Set([...enabledLinesIn, ...enabledLinesOut]));
+
+  try {
+    const res = await fetch("/api/batch/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        videos: [p1, p2, p3],
+        speed,
+        line_mode: lineMode,
+        direction_mode: directionMode,
+        enable_in: enableIn,
+        enable_out: enableOut,
+        count_scope_mode: countScopeMode,
+        enabled_lines: allEnabledLines,
+        enabled_lines_in: enabledLinesIn,
+        enabled_lines_out: enabledLinesOut
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.batch_id) {
+      showError(data.error || "Failed to start 3-video batch.");
+      resetBatchBuildBtn();
+      return;
+    }
+
+    currentBatchId = data.batch_id;
+    beginBatchRunView([p1, p2, p3]);
+  } catch (e) {
+    showError("Batch launch error: " + e.message);
+    resetBatchBuildBtn();
+  }
+}
+
+function beginBatchRunView(videoPaths) {
+  hideProgressCard();
+  reportCard.hidden = true;
+  if (batchReportContainer) batchReportContainer.hidden = true;
+  runCard.hidden = false;
+
+  if (batchStepperBar) {
+    batchStepperBar.hidden = false;
+    for (let i = 1; i <= 3; i++) {
+      const stepItem = document.getElementById(`stepper-step-${i}`);
+      const nameEl = document.getElementById(`stepper-name-${i}`);
+      const statEl = document.getElementById(`stepper-status-${i}`);
+      if (stepItem) stepItem.className = "batch-step-item" + (i === 1 ? " active" : "");
+      if (nameEl) {
+        const rawPath = videoPaths[i - 1] || `Video ${i}`;
+        nameEl.textContent = rawPath.split("/").pop();
+      }
+      if (statEl) statEl.textContent = i === 1 ? "Analyzing…" : "Waiting";
+    }
+  }
+
+  runTitle.textContent = "Sequential Batch Pipeline Running (Video 1 of 3)…";
+  resetCancelBtn();
+  sideTotal.textContent = "0";
+  sideStatus.textContent = "Analyzing Video 1 of 3 🟢";
+  sideStatus.classList.add("is-live");
+  sideLinesBlock.hidden = true;
+  sideCategoriesBlock.hidden = true;
+  sideMetaBlock.hidden = false;
+
+  runCard.scrollIntoView({ behavior: "smooth", block: "start" });
+  clearInterval(batchPollTimer);
+  batchPollTimer = setInterval(pollBatchStatus, 500);
+}
+
+let activeStreamJobId = null;
+
+async function pollBatchStatus() {
+  if (!currentBatchId) return;
+  try {
+    const res = await fetch(`/api/batch/status/${currentBatchId}`);
+    const data = await res.json();
+    if (!res.ok) return;
+
+    const curIdx = data.current_index || 0;
+    const curVideoNum = curIdx + 1;
+    const curJob = data.current_job;
+
+    // Update Stepper visual states
+    if (batchStepperBar) {
+      for (let i = 1; i <= 3; i++) {
+        const stepItem = document.getElementById(`stepper-step-${i}`);
+        const statEl = document.getElementById(`stepper-status-${i}`);
+        if (i < curVideoNum) {
+          if (stepItem) stepItem.className = "batch-step-item done";
+          if (statEl) {
+            const vRes = data.results && data.results[i - 1];
+            statEl.textContent = `✓ Done (${vRes ? vRes.count : 0} counted)`;
+          }
+        } else if (i === curVideoNum && !data.done) {
+          if (stepItem) stepItem.className = "batch-step-item active";
+          if (statEl) statEl.textContent = `Analyzing ${curJob ? curJob.progress : 0}%…`;
+        } else if (data.done && data.status === "complete") {
+          if (stepItem) stepItem.className = "batch-step-item done";
+          if (statEl) {
+            const vRes = data.results && data.results[i - 1];
+            statEl.textContent = `✓ Done (${vRes ? vRes.count : 0} counted)`;
+          }
+        } else {
+          if (stepItem) stepItem.className = "batch-step-item";
+          if (statEl) statEl.textContent = "Waiting";
+        }
+      }
+    }
+
+    // Switch video preview stream when active sub-job transitions
+    if (data.current_job_id && data.current_job_id !== activeStreamJobId) {
+      activeStreamJobId = data.current_job_id;
+      streamImg.src = `/api/stream/${activeStreamJobId}?t=${Date.now()}`;
+    }
+
+    if (curJob) {
+      runTitle.textContent = `Analyzing Video ${curVideoNum} of 3: ${curJob.video || ""} (${curJob.progress}%)…`;
+      sideStatus.textContent = `Analyzing Video ${curVideoNum} of 3 🟢`;
+      sideTotal.textContent = curJob.count;
+      statProgress.textContent = `${curJob.progress}%`;
+      statFrames.textContent = curJob.total_frames ? `frame ${curJob.frame_idx}/${curJob.total_frames}` : "";
+      progressFill.style.width = `${curJob.progress}%`;
+
+      renderLines(curJob.lines, "COMING_GOING");
+      renderCategories(curJob.categories);
+    }
+
+    if (data.done) {
+      clearInterval(batchPollTimer);
+      batchPollTimer = null;
+      resetBatchBuildBtn();
+      resetCancelBtn();
+
+      sideStatus.textContent = data.status === "complete" ? "All 3 Videos Completed! 🏁" : "Batch Stopped";
+      sideStatus.classList.remove("is-live");
+
+      renderBatchReport(data);
+      currentBatchId = null;
+      activeStreamJobId = null;
+      loadHistory();
+    }
+  } catch (err) {
+    // transient network glitch, keep polling
+  }
+}
+
+function renderBatchReport(data) {
+  runCard.hidden = true;
+  reportCard.hidden = false;
+  if (batchReportContainer) batchReportContainer.hidden = false;
+
+  const isStopped = data.status === "cancelled";
+  const totals = data.consolidated?.totals || {};
+  const grandTotal = totals.grand_total || 0;
+
+  if (reportMainTitle) reportMainTitle.textContent = "3-Video Analysis Completed!";
+  if (reportCountLabel) reportCountLabel.textContent = `${grandTotal} total vehicles counted across 3 videos ${isStopped ? "(Stopped)" : ""}`;
+  if (batchGrandTotalDisplay) batchGrandTotalDisplay.textContent = grandTotal;
+
+  // Set column headers with filenames
+  const results = data.results || [];
+  const v1Name = results[0]?.video || "Video 1";
+  const v2Name = results[1]?.video || "Video 2";
+  const v3Name = results[2]?.video || "Video 3";
+
+  if (thVideo1) thVideo1.textContent = `Video 1: ${v1Name}`;
+  if (thVideo2) thVideo2.textContent = `Video 2: ${v2Name}`;
+  if (thVideo3) thVideo3.textContent = `Video 3: ${v3Name}`;
+
+  // Populate Matrix Table Body
+  const matrix = data.consolidated?.categories || {};
+  const catEntries = Object.entries(matrix).sort((a, b) => b[1].total - a[1].total);
+
+  if (batchMatrixBody) {
+    if (!catEntries.length) {
+      batchMatrixBody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 20px; color: var(--text-dim);">No vehicle counts recorded.</td></tr>`;
+    } else {
+      batchMatrixBody.innerHTML = catEntries.map(([catName, rowData]) => {
+        const icon = getCategoryIcon(catName);
+        return `
+          <tr>
+            <td>
+              <span style="font-size: 1.1rem; margin-right: 6px;">${icon}</span>
+              <strong>${escapeHtml(catName)}</strong>
+            </td>
+            <td>${rowData.video1 || 0}</td>
+            <td>${rowData.video2 || 0}</td>
+            <td>${rowData.video3 || 0}</td>
+            <td class="td-total-col">
+              <span style="background: rgba(61, 220, 132, 0.2); color: #3ddc84; font-weight: 800; padding: 2px 10px; border-radius: 6px; border: 1px solid rgba(61, 220, 132, 0.4);">
+                ${rowData.total || 0}
+              </span>
+            </td>
+            <td style="color: var(--text-dim);">${rowData.share || 0}%</td>
+          </tr>
+        `;
+      }).join("");
+    }
+  }
+
+  // Populate Matrix Footer
+  if (batchMatrixFoot) {
+    batchMatrixFoot.innerHTML = `
+      <tr>
+        <td>GRAND TOTAL</td>
+        <td>${totals.video1 || 0}</td>
+        <td>${totals.video2 || 0}</td>
+        <td>${totals.video3 || 0}</td>
+        <td class="td-grand-total">${grandTotal}</td>
+        <td>100.0%</td>
+      </tr>
+    `;
+  }
+
+  // Set download links
+  if (downloadPdf && data.report_pdf) {
+    downloadPdf.href = data.report_pdf;
+    if (pdfBtnLabel) pdfBtnLabel.textContent = "Download Consolidated PDF Report";
+  }
+  if (downloadXlsx && data.report_xlsx) {
+    downloadXlsx.href = data.report_xlsx;
+    if (xlsxBtnLabel) xlsxBtnLabel.textContent = "Download Consolidated Excel (.xlsx) Report";
+  }
+
+  reportCard.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 async function cancelJob() {
+  if (currentBatchId) {
+    cancelBtn.disabled = true;
+    cancelBtn.textContent = "Stopping Batch…";
+    try {
+      await fetch(`/api/batch/cancel/${currentBatchId}`, { method: "POST" });
+    } catch (e) {}
+    return;
+  }
   if (!currentJobId) return;
   cancelBtn.disabled = true;
   cancelBtn.textContent = "Generating PDF…";
@@ -1230,9 +1740,12 @@ function startNewVideo() {
   updateDropZoneLabel();
   clearError();
   resetStartBtn();
+  resetBatchBuildBtn();
   resetCancelBtn();
   hideProgressCard();
   reportCard.hidden = true;
+  if (batchReportContainer) batchReportContainer.hidden = true;
+  if (batchStepperBar) batchStepperBar.hidden = true;
   runCard.hidden = true;
   setupCard.hidden = false;
   setupCard.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1359,6 +1872,7 @@ if (modalConfirmBtn) {
   });
 }
 
+if (batchBuildBtn) batchBuildBtn.addEventListener("click", startBatchJob);
 startBtn.addEventListener("click", startJob);
 cancelBtn.addEventListener("click", cancelJob);
 refreshBtn.addEventListener("click", loadHistory);

@@ -1370,3 +1370,375 @@ button.stop-btn:active {
   color: var(--text-dim);
   padding: 24px;
 }
+
+/* =========================================================
+   3-VIDEO BATCH AUTO-ANALYSIS & CONSOLIDATED RESULT STYLES
+   ========================================================= */
+
+.batch-intro-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: rgba(79, 140, 255, 0.08);
+  border: 1px solid rgba(79, 140, 255, 0.25);
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  font-size: 0.84rem;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.batch-intro-icon {
+  font-size: 1.25rem;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.batch-boxes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.batch-box-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: all 0.2s ease;
+}
+
+.batch-box-card:hover {
+  border-color: rgba(79, 140, 255, 0.4);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.batch-box-card.verified {
+  border-color: rgba(61, 220, 132, 0.4);
+  background: rgba(61, 220, 132, 0.02);
+}
+
+.batch-box-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.batch-box-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: #fff;
+}
+
+.batch-num-pill {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), #10b981);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.batch-box-status {
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-dim);
+  font-weight: 600;
+  white-space: nowrap;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.batch-box-status.verified {
+  background: rgba(61, 220, 132, 0.15);
+  color: #3ddc84;
+}
+
+.batch-box-status.error {
+  background: rgba(255, 92, 92, 0.15);
+  color: #ff5c5c;
+}
+
+.batch-box-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.batch-path-input {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+
+.batch-path-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.2);
+}
+
+.batch-actions-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.batch-btn {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.batch-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.batch-browse-btn {
+  flex: 1;
+  justify-content: center;
+  color: var(--accent);
+}
+
+.batch-sample-btn {
+  color: #facc15;
+}
+
+.batch-clear-btn {
+  padding: 6px 8px;
+  color: var(--text-dim);
+}
+
+.batch-clear-btn:hover {
+  color: #ff5c5c;
+}
+
+/* Batch Pipeline Stepper (in Run Card) */
+.batch-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+}
+
+.batch-step-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  transition: all 0.2s ease;
+}
+
+.batch-step-item .step-badge {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.batch-step-item .step-info {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.batch-step-item .step-name {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.batch-step-item .step-status {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+}
+
+.batch-step-item.active {
+  background: rgba(79, 140, 255, 0.12);
+  border: 1px solid rgba(79, 140, 255, 0.35);
+}
+
+.batch-step-item.active .step-badge {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 0 10px rgba(79, 140, 255, 0.5);
+  animation: pulse-step 1.5s infinite;
+}
+
+.batch-step-item.active .step-status {
+  color: #60a5fa;
+  font-weight: 600;
+}
+
+.batch-step-item.done {
+  background: rgba(61, 220, 132, 0.08);
+  border: 1px solid rgba(61, 220, 132, 0.25);
+}
+
+.batch-step-item.done .step-badge {
+  background: #3ddc84;
+  color: #000;
+}
+
+.batch-step-item.done .step-status {
+  color: #3ddc84;
+  font-weight: 600;
+}
+
+@keyframes pulse-step {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+.batch-step-arrow {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  user-select: none;
+}
+
+/* Consolidated Result Sheet Card */
+.batch-report-container {
+  margin-top: 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.matrix-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.matrix-badge {
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(79, 140, 255, 0.15);
+  color: var(--accent);
+  letter-spacing: 0.05em;
+}
+
+.matrix-kpi-pill {
+  background: rgba(61, 220, 132, 0.1);
+  border: 1px solid rgba(61, 220, 132, 0.25);
+  border-radius: 10px;
+  padding: 8px 16px;
+  text-align: center;
+}
+
+.batch-matrix-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.batch-matrix-table th {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 10px 12px;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+}
+
+.batch-matrix-table th:first-child {
+  text-align: left;
+}
+
+.batch-matrix-table th.th-total {
+  background: rgba(79, 140, 255, 0.18);
+  color: #93c5fd;
+}
+
+.batch-matrix-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  text-align: center;
+  color: var(--text);
+}
+
+.batch-matrix-table td:first-child {
+  text-align: left;
+  font-weight: 600;
+}
+
+.batch-matrix-table tr:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.batch-matrix-table td.td-total-col {
+  background: rgba(79, 140, 255, 0.08);
+  font-weight: 800;
+  color: #3ddc84;
+}
+
+.batch-matrix-table tfoot td {
+  padding: 12px;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.05);
+  border-top: 2px solid var(--border);
+  color: #fff;
+}
+
+.batch-matrix-table tfoot td.td-grand-total {
+  background: linear-gradient(135deg, rgba(61, 220, 132, 0.25), rgba(79, 140, 255, 0.25));
+  color: #3ddc84;
+  font-size: 1.05rem;
+}
