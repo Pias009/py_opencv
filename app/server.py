@@ -867,13 +867,13 @@ def batch_worker(batch_id, video_list, settings):
             "total_frames": 0,
             "vid_stride": settings.get("vid_stride", 2),
             "line_mode": settings.get("line_mode", "smart_flow"),
-            "invert_direction": False,   # batch: never invert
-            "enable_in": True,           # batch: count ALL directions
-            "enable_out": True,          # batch: count ALL directions
-            "count_scope_mode": "all_road",  # batch: count every vehicle on the road
-            "enabled_lines": ["North", "South", "West", "East", "Traffic Flow"],
-            "enabled_lines_in": None,    # batch: no side filter — count every lane
-            "enabled_lines_out": None,   # batch: no side filter — count every lane
+            "invert_direction": settings.get("invert_direction", False),
+            "enable_in": settings.get("enable_in", True),
+            "enable_out": settings.get("enable_out", True),
+            "count_scope_mode": settings.get("count_scope_mode", "active_only"),
+            "enabled_lines": settings.get("enabled_lines", ["North", "South", "West", "East"]),
+            "enabled_lines_in": settings.get("enabled_lines_in"),
+            "enabled_lines_out": settings.get("enabled_lines_out"),
             "direction_mode": settings.get("direction_mode", "COMING_GOING"),
             "speed_mode": f"{settings.get('vid_stride', 2)}x Fast-Forward",
             "reanalyzed": 0,
@@ -1095,10 +1095,20 @@ def api_batch_start():
         enabled_lines = [x.strip() for x in str(enabled_lines_raw).split(",") if x.strip()]
 
     raw_in = data.get("enabled_lines_in")
-    enabled_lines_in = [x.strip() for x in str(raw_in).split(",") if x.strip()] if raw_in else None
+    if isinstance(raw_in, list):
+        enabled_lines_in = [x.strip() for x in raw_in if str(x).strip()] or None
+    elif isinstance(raw_in, str) and raw_in.strip():
+        enabled_lines_in = [x.strip() for x in raw_in.split(",") if x.strip()] or None
+    else:
+        enabled_lines_in = None
 
     raw_out = data.get("enabled_lines_out")
-    enabled_lines_out = [x.strip() for x in str(raw_out).split(",") if x.strip()] if raw_out else None
+    if isinstance(raw_out, list):
+        enabled_lines_out = [x.strip() for x in raw_out if str(x).strip()] or None
+    elif isinstance(raw_out, str) and raw_out.strip():
+        enabled_lines_out = [x.strip() for x in raw_out.split(",") if x.strip()] or None
+    else:
+        enabled_lines_out = None
 
     settings = {
         "vid_stride": vid_stride,
