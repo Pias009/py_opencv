@@ -854,19 +854,6 @@ def batch_worker(batch_id, video_list, settings):
         filename = vid_info["filename"]
         job_id = f"{batch_id}_{idx}"
 
-        # Auto-boost stride for long videos to keep batch processing fast
-        import cv2 as _cv2_check
-        _cap_check = _cv2_check.VideoCapture(video_path)
-        _total_f = int(_cap_check.get(_cv2_check.CAP_PROP_FRAME_COUNT)) or 0
-        _cap_check.release()
-        base_stride = settings.get("vid_stride", 2)
-        if _total_f > 6000:
-            auto_stride = max(base_stride, 4)   # Very long video (>6000 frames): use at least 4x
-        elif _total_f > 3000:
-            auto_stride = max(base_stride, 3)   # Long video (>3000 frames): use at least 3x
-        else:
-            auto_stride = base_stride
-
         job = {
             "status": "starting",
             "video": filename,
@@ -878,17 +865,17 @@ def batch_worker(batch_id, video_list, settings):
             "categories": {},
             "frame_idx": 0,
             "total_frames": 0,
-            "vid_stride": auto_stride,
+            "vid_stride": settings.get("vid_stride", 2),
             "line_mode": settings.get("line_mode", "smart_flow"),
-            "invert_direction": False,            # batch: never invert
-            "enable_in": True,                    # batch: ALWAYS count both directions
-            "enable_out": True,                   # batch: ALWAYS count both directions
-            "count_scope_mode": "all_road",       # batch: count everything on the road
-            "enabled_lines": ["North", "South", "West", "East", "Traffic Flow"],
-            "enabled_lines_in": None,             # batch: no side filter
-            "enabled_lines_out": None,            # batch: no side filter
+            "invert_direction": settings.get("invert_direction", False),
+            "enable_in": settings.get("enable_in", True),
+            "enable_out": settings.get("enable_out", True),
+            "count_scope_mode": settings.get("count_scope_mode", "active_only"),
+            "enabled_lines": settings.get("enabled_lines", ["North", "South", "West", "East"]),
+            "enabled_lines_in": settings.get("enabled_lines_in"),
+            "enabled_lines_out": settings.get("enabled_lines_out"),
             "direction_mode": settings.get("direction_mode", "COMING_GOING"),
-            "speed_mode": f"{auto_stride}x Fast-Forward",
+            "speed_mode": f"{settings.get('vid_stride', 2)}x Fast-Forward",
             "reanalyzed": 0,
             "started_at": time.time(),
             "batch_id": batch_id,
@@ -927,8 +914,8 @@ def batch_worker(batch_id, video_list, settings):
 
             from zero_fault_counter import run_zero_fault_counter
             run_zero_fault_counter(video_path, job, lines=lines, model_key="bnvd",
-                                   conf_threshold=0.20, imgsz=480,
-                                   vid_stride=job.get("vid_stride", 3),
+                                   conf_threshold=0.18, imgsz=640,
+                                   vid_stride=job.get("vid_stride", 2),
                                    frame_sink=frame_sink)
         except Exception as e:
             job["status"] = "error"
