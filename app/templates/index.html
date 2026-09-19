@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vehicle Counter</title>
-<link rel="stylesheet" href="/static/style.css?v=13.0">
+<link rel="stylesheet" href="/static/style.css?v=14.0">
 </head>
 <body>
 <!--
@@ -303,6 +303,63 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
           </select>
         </div>
       </div>
+      <!-- ═══════════════════════════════════════════════════════════════
+           LANE SELECTOR — Banani to Gulshan  /  Gulshan to Mohakhali
+           ═══════════════════════════════════════════════════════════════ -->
+      <div class="lane-selector-section" id="lane-selector-section">
+        <div class="lane-selector-header">
+          <span class="lane-selector-icon">🛣️</span>
+          <div>
+            <span class="lane-selector-title">Select Active Counting Lane</span>
+            <span class="lane-selector-sub">Select which lane to count. Counted vehicles show 🟢 Green Box — All other vehicles show 🔴 Red Box</span>
+          </div>
+        </div>
+
+        <!-- Intersection Reference Image from User -->
+        <div class="lane-map-wrapper">
+          <img src="/static/img/lane_map_banani_gulshan.jpg" alt="Intersection Reference Lane Map" class="lane-map-img" id="lane-map-img">
+          <div class="lane-map-hint">📸 Intersection Lane Map (CCTV Reference)</div>
+        </div>
+
+        <!-- Two Lane Option Buttons -->
+        <div class="lane-btn-group">
+          <button type="button" id="lane-btn-banani-gulshan" class="lane-btn lane-btn-active"
+                  data-lane="banani_gulshan"
+                  data-tip="Count vehicles going from Banani to Gulshan (Blue arrows). Gulshan to Mohakhali lane will show Red Box.">
+            <div class="lane-btn-inner">
+              <span class="lane-btn-radio">✓</span>
+              <div class="lane-btn-text">
+                <span class="lane-btn-name">Banani to Gulshan</span>
+                <span class="lane-btn-desc">Straight &amp; Right-turn lanes (Blue arrows)</span>
+              </div>
+              <span class="lane-btn-badge" id="lane-badge-banani-gulshan">ACTIVE</span>
+            </div>
+          </button>
+
+          <button type="button" id="lane-btn-gulshan-mohakhali" class="lane-btn lane-btn-inactive"
+                  data-lane="gulshan_mohakhali"
+                  data-tip="Count vehicles going from Gulshan to Mohakhali (Yellow arrow). Banani lane will show Red Box.">
+            <div class="lane-btn-inner">
+              <span class="lane-btn-radio">○</span>
+              <div class="lane-btn-text">
+                <span class="lane-btn-name">Gulshan to Mohakhali</span>
+                <span class="lane-btn-desc">Right-side lane (Yellow arrow)</span>
+              </div>
+              <span class="lane-btn-badge lane-badge-off" id="lane-badge-gulshan-mohakhali">OFF</span>
+            </div>
+          </button>
+        </div>
+
+        <div class="lane-active-info" id="lane-active-info">
+          <span class="lane-info-dot" style="background:#4f8cff;"></span>
+          <span id="lane-active-label">Counting: <strong>Banani to Gulshan</strong> — Only this lane is counted (🟢 Green Box). Other lanes show 🔴 Red Box</span>
+        </div>
+
+        <div class="lane-quick-tip">
+          ⚡ <em>Active lane selected! Just click <strong>Start Counter</strong> below. No other settings needed.</em>
+        </div>
+      </div>
+
       <div class="toggle-section">
         <!-- Header & Quick Presets -->
         <div class="toggle-header">
@@ -653,6 +710,6 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   </div>
 </div>
 
-<script src="/static/app.js?v=17.0"></script>
+<script src="/static/app.js?v=18.0"></script>
 </body>
 </html>

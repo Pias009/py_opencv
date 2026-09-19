@@ -91,6 +91,116 @@ const LINE_COLORS = ["#4f8cff", "#ff7a45", "#3ddc84", "#ff5c5c", "#c084fc", "#fa
 let currentJobId = null;
 let pollTimer = null;
 
+// ═══════════════════════════════════════════════════════════════
+//  LANE SELECTOR — Banani→Gulshan / Gulshan→Mohakhali
+// ═══════════════════════════════════════════════════════════════
+// activeLane: 'banani_gulshan' → count Coming vehicles (enable_in=true, enable_out=false)
+//             'gulshan_mohakhali' → count Going vehicles (enable_in=false, enable_out=true)
+let activeLane = 'banani_gulshan';
+
+const laneBtnBananiGulshan = document.getElementById('lane-btn-banani-gulshan');
+const laneBtnGulshanMohakhali = document.getElementById('lane-btn-gulshan-mohakhali');
+const laneBadgeBananiGulshan = document.getElementById('lane-badge-banani-gulshan');
+const laneBadgeGulshanMohakhali = document.getElementById('lane-badge-gulshan-mohakhali');
+const laneActiveLabel = document.getElementById('lane-active-label');
+const laneActiveInfo = document.getElementById('lane-active-info');
+const laneInfoDot = laneActiveInfo ? laneActiveInfo.querySelector('.lane-info-dot') : null;
+const laneMapWrapper = document.querySelector('.lane-map-wrapper');
+
+function setActiveLane(lane) {
+  activeLane = lane;
+
+  const isBanani = lane === 'banani_gulshan';
+
+  // Update button states
+  if (laneBtnBananiGulshan) {
+    laneBtnBananiGulshan.classList.toggle('lane-btn-active', isBanani);
+    laneBtnBananiGulshan.classList.toggle('lane-btn-inactive', !isBanani);
+    const r = laneBtnBananiGulshan.querySelector('.lane-btn-radio');
+    if (r) r.textContent = isBanani ? '✓' : '○';
+  }
+  if (laneBtnGulshanMohakhali) {
+    laneBtnGulshanMohakhali.classList.toggle('lane-btn-active', !isBanani);
+    laneBtnGulshanMohakhali.classList.toggle('lane-btn-inactive', isBanani);
+    const r = laneBtnGulshanMohakhali.querySelector('.lane-btn-radio');
+    if (r) r.textContent = !isBanani ? '✓' : '○';
+  }
+
+  // Update badges
+  if (laneBadgeBananiGulshan) {
+    laneBadgeBananiGulshan.textContent = isBanani ? 'ACTIVE' : 'OFF';
+    laneBadgeBananiGulshan.classList.toggle('lane-badge-off', !isBanani);
+  }
+  if (laneBadgeGulshanMohakhali) {
+    laneBadgeGulshanMohakhali.textContent = !isBanani ? 'ACTIVE' : 'OFF';
+    laneBadgeGulshanMohakhali.classList.toggle('lane-badge-off', isBanani);
+  }
+
+  // Update info bar
+  if (laneInfoDot) {
+    laneInfoDot.style.background = isBanani ? '#4f8cff' : '#facc15';
+  }
+  if (laneActiveLabel) {
+    if (isBanani) {
+      laneActiveLabel.innerHTML = 'Counting: <strong>Banani to Gulshan</strong> — Only this lane is counted (🟢 Green Box). Other lanes show 🔴 Red Box';
+    } else {
+      laneActiveLabel.innerHTML = 'Counting: <strong>Gulshan to Mohakhali</strong> — Only this lane is counted (🟢 Green Box). Other lanes show 🔴 Red Box';
+    }
+  }
+
+  // Update map wrapper border color
+  if (laneMapWrapper) {
+    laneMapWrapper.style.borderColor = isBanani
+      ? 'rgba(79,140,255,0.5)'
+      : 'rgba(250,204,21,0.5)';
+  }
+
+  // Sync the underlying toggle-in / toggle-out checkboxes
+  const toggleIn = document.getElementById('toggle-in');
+  const toggleOut = document.getElementById('toggle-out');
+  if (toggleIn) toggleIn.checked = isBanani;        // Banani to Gulshan
+  if (toggleOut) toggleOut.checked = !isBanani;     // Gulshan to Mohakhali
+
+  if (isBanani) {
+    document.querySelectorAll('.line-in-check').forEach(c => c.checked = true);
+    document.querySelectorAll('.line-out-check').forEach(c => c.checked = false);
+  } else {
+    document.querySelectorAll('.line-in-check').forEach(c => c.checked = false);
+    document.querySelectorAll('.line-out-check').forEach(c => c.checked = true);
+  }
+
+  if (typeof syncDirectionButtons === 'function') syncDirectionButtons();
+  if (typeof updateSidebarRules === 'function') updateSidebarRules();
+
+  showToast(
+    isBanani
+      ? '🔵 Active lane: Banani to Gulshan. Only this lane counted (Green box).'
+      : '🟡 Active lane: Gulshan to Mohakhali. Only this lane counted (Green box).',
+    isBanani ? 'info' : 'warning'
+  );
+
+  // If a job is running, push live rule update
+  if (typeof pushLiveRuleUpdate === 'function') pushLiveRuleUpdate();
+}
+
+if (laneBtnBananiGulshan) {
+  laneBtnBananiGulshan.addEventListener('click', () => setActiveLane('banani_gulshan'));
+}
+if (laneBtnGulshanMohakhali) {
+  laneBtnGulshanMohakhali.addEventListener('click', () => setActiveLane('gulshan_mohakhali'));
+}
+
+// Helper: get active lane counting config for job start
+function getLaneCountingConfig() {
+  return {
+    enableIn: true,
+    enableOut: true,
+    enabledLinesIn: ['North', 'South', 'West', 'East', 'Traffic Flow', 'Gulshan Entry', 'Mohakhali Flow'],
+    enabledLinesOut: ['North', 'South', 'West', 'East', 'Traffic Flow', 'Gulshan Entry', 'Mohakhali Flow'],
+  };
+}
+
+
 function showError(msg) {
   errorMsg.textContent = msg;
   errorMsg.hidden = false;
@@ -990,6 +1100,7 @@ async function pushLiveRuleUpdate() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        active_lane: activeLane,
         direction_mode: directionMode,
         enable_in: enableIn,
         enable_out: enableOut,
@@ -1251,11 +1362,13 @@ async function startJob() {
   const speed = speedSelect ? speedSelect.value : "2";
   const lineMode = lineModeSelect ? lineModeSelect.value : "box";
   const directionMode = directionModeSelect ? directionModeSelect.value : "COMING_GOING";
-  const enableIn = toggleIn ? toggleIn.checked : true;
-  const enableOut = toggleOut ? toggleOut.checked : true;
 
-  const enabledLinesIn = Array.from(document.querySelectorAll(".line-in-check:checked")).map(c => c.value);
-  const enabledLinesOut = Array.from(document.querySelectorAll(".line-out-check:checked")).map(c => c.value);
+  // Use active lane config (Banani→Gulshan or Gulshan→Mohakhali)
+  const laneConfig = getLaneCountingConfig();
+  const enableIn = laneConfig.enableIn;
+  const enableOut = laneConfig.enableOut;
+  const enabledLinesIn = laneConfig.enabledLinesIn;
+  const enabledLinesOut = laneConfig.enabledLinesOut;
   const allEnabledLines = Array.from(new Set([...enabledLinesIn, ...enabledLinesOut]));
 
   try {
@@ -1285,6 +1398,7 @@ async function startJob() {
     startFormData.append("speed", speed);
     startFormData.append("line_mode", lineMode);
     startFormData.append("direction_mode", directionMode);
+    startFormData.append("active_lane", activeLane);
     startFormData.append("enable_in", enableIn);
     startFormData.append("enable_out", enableOut);
     startFormData.append("count_scope_mode", countScopeMode);
@@ -1668,12 +1782,14 @@ async function startBatchJob() {
   const speed = speedSelect ? speedSelect.value : "2";
   const lineMode = lineModeSelect ? lineModeSelect.value : "smart_flow";
   const directionMode = directionModeSelect ? directionModeSelect.value : "COMING_GOING";
-  const enableIn = toggleIn ? toggleIn.checked : true;
-  const enableOut = toggleOut ? toggleOut.checked : true;
   const countScopeMode = countScopeRadio ? countScopeRadio.value : "active_only";
 
-  const enabledLinesIn = Array.from(document.querySelectorAll(".line-in-check:checked")).map(c => c.value);
-  const enabledLinesOut = Array.from(document.querySelectorAll(".line-out-check:checked")).map(c => c.value);
+  // Use active lane config (Banani→Gulshan or Gulshan→Mohakhali)
+  const laneConfig = getLaneCountingConfig();
+  const enableIn = laneConfig.enableIn;
+  const enableOut = laneConfig.enableOut;
+  const enabledLinesIn = laneConfig.enabledLinesIn;
+  const enabledLinesOut = laneConfig.enabledLinesOut;
   const allEnabledLines = Array.from(new Set([...enabledLinesIn, ...enabledLinesOut]));
 
   try {
@@ -1683,6 +1799,7 @@ async function startBatchJob() {
       body: JSON.stringify({
         videos: finalPaths,
         speed,
+        active_lane: activeLane,
         line_mode: lineMode,
         direction_mode: directionMode,
         enable_in: enableIn,

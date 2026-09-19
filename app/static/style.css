@@ -1798,3 +1798,280 @@ button.stop-btn:active {
   color: #3ddc84;
   font-size: 1.05rem;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   LANE SELECTOR — Banani→Gulshan / Gulshan→Mohakhali
+   ═══════════════════════════════════════════════════════════════════════ */
+.lane-selector-section {
+  background: linear-gradient(135deg, rgba(79,140,255,0.07), rgba(250,204,21,0.04));
+  border: 1px solid rgba(79,140,255,0.25);
+  border-radius: 14px;
+  padding: 20px 20px 16px;
+  margin-top: 18px;
+  margin-bottom: 6px;
+  position: relative;
+  overflow: hidden;
+}
+
+.lane-selector-section::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #4f8cff, #facc15);
+  border-radius: 14px 14px 0 0;
+}
+
+.lane-selector-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.lane-selector-icon {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.lane-selector-title {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.01em;
+}
+
+.lane-selector-sub {
+  display: block;
+  font-size: 0.74rem;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+/* Intersection Reference Image */
+.lane-map-wrapper {
+  position: relative;
+  width: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 2px solid rgba(79,140,255,0.35);
+  background: #07090e;
+  margin-bottom: 14px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.5);
+  transition: border-color 0.3s ease;
+}
+
+.lane-map-img {
+  width: 100%;
+  display: block;
+  border-radius: 10px;
+  max-height: 380px;
+  object-fit: contain;
+  background: #07090e;
+}
+
+.lane-map-hint {
+  padding: 6px 12px;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  background: rgba(0,0,0,0.4);
+  border-top: 1px solid rgba(255,255,255,0.06);
+  text-align: center;
+}
+
+/* Lane Buttons */
+.lane-btn-group {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.lane-btn {
+  border: 2px solid transparent;
+  border-radius: 12px;
+  padding: 0;
+  cursor: pointer;
+  background: rgba(255,255,255,0.03);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.lane-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+}
+
+.lane-btn-active {
+  border-color: #4f8cff;
+  background: rgba(79,140,255,0.14);
+  box-shadow: 0 0 24px rgba(79,140,255,0.3), inset 0 0 20px rgba(79,140,255,0.08);
+}
+
+.lane-btn-inactive {
+  border-color: rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.02);
+  opacity: 0.7;
+}
+
+.lane-btn-inactive:hover {
+  border-color: rgba(250,204,21,0.5);
+  background: rgba(250,204,21,0.08);
+  opacity: 1;
+}
+
+.lane-btn-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.lane-btn-radio {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-size: 0.85rem;
+  font-weight: 900;
+  line-height: 1;
+  flex-shrink: 0;
+  background: rgba(79,140,255,0.25);
+  color: #4f8cff;
+  border: 2px solid #4f8cff;
+  transition: all 0.2s ease;
+}
+
+.lane-btn-inactive .lane-btn-radio {
+  background: rgba(255,255,255,0.05);
+  color: var(--text-dim);
+  border-color: rgba(255,255,255,0.2);
+}
+
+.lane-btn-text {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+
+.lane-btn-name {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lane-btn-desc {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lane-btn-badge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: rgba(79,140,255,0.25);
+  color: #4f8cff;
+  border: 1px solid rgba(79,140,255,0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+  animation: lane-pulse 2s ease-in-out infinite;
+}
+
+@keyframes lane-pulse {
+  0%, 100% { box-shadow: 0 0 4px rgba(79,140,255,0.4); }
+  50% { box-shadow: 0 0 14px rgba(79,140,255,0.8); }
+}
+
+.lane-badge-off {
+  background: rgba(255,255,255,0.04);
+  color: var(--text-dim);
+  border-color: rgba(255,255,255,0.12);
+  animation: none;
+}
+
+/* When Gulshan to Mohakhali is active, use gold/yellow accent */
+.lane-btn-active[data-lane="gulshan_mohakhali"] {
+  border-color: #facc15;
+  background: rgba(250,204,21,0.12);
+  box-shadow: 0 0 24px rgba(250,204,21,0.25), inset 0 0 20px rgba(250,204,21,0.06);
+}
+
+.lane-btn-active[data-lane="gulshan_mohakhali"] .lane-btn-radio {
+  background: rgba(250,204,21,0.25);
+  color: #facc15;
+  border-color: #facc15;
+}
+
+.lane-btn-active[data-lane="gulshan_mohakhali"] .lane-btn-badge {
+  background: rgba(250,204,21,0.22);
+  color: #facc15;
+  border-color: rgba(250,204,21,0.6);
+  animation: lane-pulse-yellow 2s ease-in-out infinite;
+}
+
+@keyframes lane-pulse-yellow {
+  0%, 100% { box-shadow: 0 0 4px rgba(250,204,21,0.4); }
+  50% { box-shadow: 0 0 14px rgba(250,204,21,0.8); }
+}
+
+/* Active Info Bar */
+.lane-active-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 8px;
+  padding: 9px 14px;
+  margin-bottom: 8px;
+}
+
+.lane-info-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 8px currentColor;
+  animation: dot-pulse 2s ease-in-out infinite;
+}
+
+@keyframes dot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.lane-active-info strong {
+  color: #fff;
+}
+
+.lane-quick-tip {
+  font-size: 0.76rem;
+  color: #3ddc84;
+  background: rgba(61, 220, 132, 0.08);
+  border: 1px solid rgba(61, 220, 132, 0.2);
+  border-radius: 6px;
+  padding: 6px 12px;
+  text-align: center;
+}
+
+/* Responsive: stack on small */
+@media (max-width: 580px) {
+  .lane-btn-group { grid-template-columns: 1fr; }
+}

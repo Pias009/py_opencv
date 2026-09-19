@@ -191,7 +191,16 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
     line_mode = job.get("line_mode", "smart_flow")
     is_smart_flow = (line_mode in ("smart_flow", "auto", "corridor", None)) or (lines and len(lines) == 1 and "Traffic Flow" in lines[0].name)
 
-    if not lines:
+    active_lane = str(job.get("active_lane", "banani_gulshan")).strip().lower()
+    if active_lane == "banani_gulshan":
+        gx1, gy1 = int(frame_w * 0.39), int(frame_h * 0.28)
+        gx2, gy2 = int(frame_w * 0.43), int(frame_h * 0.62)
+        lines = [CountingLine("Gulshan Entry", gx1, gy1, gx2, gy2)]
+    elif active_lane == "gulshan_mohakhali":
+        mx1, my = int(frame_w * 0.65), int(frame_h * 0.48)
+        mx2 = int(frame_w * 0.98)
+        lines = [CountingLine("Mohakhali Flow", mx1, my, mx2, my)]
+    elif not lines:
         if is_smart_flow:
             lines = [CountingLine("Traffic Flow", 0, int(frame_h * 0.50), frame_w, int(frame_h * 0.50))]
         else:
@@ -203,13 +212,32 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
             ln.nx, ln.ny = -ln.nx, -ln.ny
 
     # Grab the very first camera frame, draw flow indicator/lines and push to frame_sink immediately!
-    # User sees camera feed & active counting zone within 100ms instead of a blank box.
     if frame_sink is not None:
         try:
             ret_init, frame_init = cap.read()
             if ret_init and frame_init is not None:
                 preview = frame_init.copy()
-                if is_smart_flow:
+                if active_lane == "banani_gulshan":
+                    gx1, gy1 = int(frame_w * 0.39), int(frame_h * 0.28)
+                    gx2, gy2 = int(frame_w * 0.43), int(frame_h * 0.62)
+                    cv2.line(preview, (gx1, gy1), (gx2, gy2), (0, 180, 40), 7)
+                    cv2.line(preview, (gx1, gy1), (gx2, gy2), (0, 255, 60), 3)
+                    cv2.putText(preview, "GULSHAN ENTRY GATE --> [ACTIVE COUNTING]", (gx1 + 10, gy1 + 25),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.58, (0, 255, 60), 2)
+                    cv2.putText(preview, "Banani Straight Road [NOT COUNTING - RED BOX]", (18, int(frame_h * 0.85)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.52, (0, 0, 255), 2)
+                    cv2.putText(preview, "Mohakhali Road [OFF - RED BOX]", (int(frame_w * 0.65), int(frame_h * 0.50)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.52, (0, 0, 255), 2)
+                elif active_lane == "gulshan_mohakhali":
+                    mx1, my = int(frame_w * 0.65), int(frame_h * 0.48)
+                    mx2 = int(frame_w * 0.98)
+                    cv2.line(preview, (mx1, my), (mx2, my), (0, 200, 255), 7)
+                    cv2.line(preview, (mx1, my), (mx2, my), (0, 255, 255), 3)
+                    cv2.putText(preview, "GULSHAN -> MOHAKHALI GATE v [COUNTING]", (mx1 + 10, my - 12),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.58, (0, 255, 255), 2)
+                    cv2.putText(preview, "Banani Road [OFF - RED BOX]", (18, int(frame_h * 0.50)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.50, (0, 0, 255), 2)
+                elif is_smart_flow:
                     road_y = int(frame_h * 0.42)
                     cv2.line(preview, (10, road_y), (frame_w - 10, road_y), (0, 230, 80), 2)
                     cv2.putText(preview, "SMART TRAJECTORY FLOW (ZERO MISS - NO LINE TOUCH REQUIRED)", (25, 45),
@@ -297,9 +325,28 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
 
         # Draw line boundaries or active road flow zone
         if needs_vis:
-            if is_smart_flow:
+            if active_lane == "banani_gulshan":
+                gx1, gy1 = int(frame_w * 0.39), int(frame_h * 0.28)
+                gx2, gy2 = int(frame_w * 0.43), int(frame_h * 0.62)
+                cv2.line(frame, (gx1, gy1), (gx2, gy2), (0, 180, 40), 7)
+                cv2.line(frame, (gx1, gy1), (gx2, gy2), (0, 255, 60), 3)
+                cv2.putText(frame, "GULSHAN ENTRY GATE --> [ACTIVE COUNTING]", (gx1 + 10, gy1 + 25),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.58, (0, 255, 60), 2)
+                cv2.putText(frame, "Banani Straight Road [NOT COUNTING - RED BOX]", (18, int(frame_h * 0.85)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.52, (0, 0, 255), 2)
+                cv2.putText(frame, "Mohakhali Road [OFF - RED BOX]", (int(frame_w * 0.65), int(frame_h * 0.50)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.52, (0, 0, 255), 2)
+            elif active_lane == "gulshan_mohakhali":
+                mx1, my = int(frame_w * 0.65), int(frame_h * 0.48)
+                mx2 = int(frame_w * 0.98)
+                cv2.line(frame, (mx1, my), (mx2, my), (0, 200, 255), 7)
+                cv2.line(frame, (mx1, my), (mx2, my), (0, 255, 255), 3)
+                cv2.putText(frame, "GULSHAN -> MOHAKHALI GATE v [COUNTING]", (mx1 + 10, my - 12),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.58, (0, 255, 255), 2)
+                cv2.putText(frame, "Banani Road [OFF - RED BOX]", (18, int(frame_h * 0.50)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.50, (0, 0, 255), 2)
+            elif is_smart_flow:
                 road_y = int(frame_h * 0.42)
-                # Draw sleek active road flow indicator
                 cv2.line(frame, (10, road_y), (frame_w - 10, road_y), (0, 230, 80), 2)
                 cv2.putText(frame, "ACTIVE ROAD FLOW COUNTING ZONE (ALL LANES)", (18, road_y - 8),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 230, 80), 2)
@@ -577,142 +624,270 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                             is_going_vehicle, is_coming_vehicle = is_coming_vehicle, is_going_vehicle
                             tr["direction"] = "coming" if is_coming_vehicle else "going"
 
-                        # Direction gate:
-                        if (not enable_in) and is_coming_vehicle:
-                            pass  # Skip incoming when disabled
-                        elif (not enable_out) and is_going_vehicle:
-                            pass  # Skip outgoing when disabled
-                        else:
-                            if is_smart_flow:
-                                # ── SMART TRAJECTORY FLOW ENGINE (Zero Miss, No Line Touch Required) ──
-                                # Side / lane filtering: check user-selected sides
-                                side_allowed = True
-                                veh_side = tr.get("flow_side", "South")
-                                if is_coming_vehicle and enabled_lines_in is not None and len(enabled_lines_in) > 0:
-                                    side_allowed = False
-                                    for al in enabled_lines_in:
-                                        al_low = al.strip().lower()
-                                        if al_low in veh_side.lower():
-                                            side_allowed = True
-                                            break
-                                elif is_going_vehicle and enabled_lines_out is not None and len(enabled_lines_out) > 0:
-                                    side_allowed = False
-                                    for al in enabled_lines_out:
-                                        al_low = al.strip().lower()
-                                        if al_low in veh_side.lower():
-                                            side_allowed = True
+                        # ── Active Lane Gate (Banani to Gulshan vs Gulshan to Mohakhali) ──
+                        active_lane = str(job.get("active_lane", "banani_gulshan")).strip().lower()
+                        x0_init = history[0][0]
+                        y0_init = history[0][1]
+                        dx_tot = cx - x0_init
+                        dy_tot = cy - y0_init
+
+                        if active_lane == "banani_gulshan":
+                            # Target: ONLY vehicles from Banani entering into the Gulshan lane (right turn / eastward)
+                            target_ln = lines[0] if lines else None
+                            gx1, gy1 = (target_ln.x1, target_ln.y1) if target_ln else (int(frame_w * 0.39), int(frame_h * 0.28))
+                            gx2, gy2 = (target_ln.x2, target_ln.y2) if target_ln else (int(frame_w * 0.43), int(frame_h * 0.62))
+
+                            # 1. Banani approach origin: Must originate from top-left / west approach
+                            orig_banani = (x0_init <= frame_w * 0.42) and (y0_init <= frame_h * 0.65)
+
+                            # 2. Must be moving eastward towards Gulshan (positive dx)
+                            is_eastbound = (dx_tot >= 8.0) and (cx - p_prev[0] >= -1.0)
+
+                            # 3. Must be within the vertical corridor of the Gulshan entrance
+                            in_corridor = (int(frame_h * 0.22) <= cy <= int(frame_h * 0.65))
+
+                            # 4. Strict straight Banani road suppression:
+                            # Straight Banani vehicles move down-left towards yellow box (cy > 0.65 * frame_h or dy >> dx)
+                            is_straight_banani = (cy > frame_h * 0.65) or (dy_tot > 1.2 * max(1.0, abs_dx) and cy > frame_h * 0.48)
+
+                            # 5. Gate crossing detection:
+                            crossed_seg = segments_intersect(p_prev, p_curr, (gx1, gy1), (gx2, gy2))
+                            side_p = target_ln.signed_side(p_prev[0], p_prev[1]) if target_ln else -1
+                            side_c = target_ln.signed_side(cx, cy) if target_ln else 1
+                            side_crossed = (side_p * side_c < 0) and (target_ln.distance_to_segment(cx, cy) <= 65 if target_ln else False)
+
+                            side_leap = False
+                            if len(history) >= 3 and target_ln:
+                                side_old = target_ln.signed_side(history[-3][0], history[-3][1])
+                                if (side_old * side_c < 0) and (target_ln.distance_to_segment(cx, cy) <= 80):
+                                    side_leap = True
+
+                            box_crossed = box_intersects_segment(box, (gx1, gy1), (gx2, gy2))
+
+                            slope_gate = (gx2 - gx1) / max(1, (gy2 - gy1))
+                            gate_x_at_cy = gx1 + slope_gate * (cy - gy1)
+                            penetration_crossed = (p_prev[0] <= gate_x_at_cy + 8) and (cx >= gate_x_at_cy - 8)
+
+                            gate_reached = crossed_seg or side_crossed or side_leap or box_crossed or penetration_crossed
+
+                            is_entering_gulshan = orig_banani and is_eastbound and in_corridor and (not is_straight_banani) and gate_reached
+                            is_lane_disallowed = not is_entering_gulshan
+
+                            if is_entering_gulshan:
+                                # Deduplication check against recently counted tracks
+                                is_duplicate = False
+                                d_thresh = max(45.0, 0.06 * frame_w)
+                                for r_ev in recent_counted_vehicles:
+                                    if (frame_idx - r_ev["frame"]) <= 50:
+                                        d = ((cx - r_ev["cx"])**2 + (cy - r_ev["cy"])**2)**0.5
+                                        same_cat = (r_ev["cat"] == cat) or (r_ev["cat"] in HEAVY_CATEGORIES and cat in HEAVY_CATEGORIES) or (r_ev["cat"] in ["Car", "Microbus"] and cat in ["Car", "Microbus"])
+                                        if same_cat and d < d_thresh:
+                                            is_duplicate = True
                                             break
 
-                                if not side_allowed:
-                                    pass  # Skip if side / lane is unselected
+                                if is_duplicate:
+                                    tr["globally_counted"] = True
                                 else:
-                                    # For COMING: require vehicle to move into counting zone (cy >= frame_h * 0.48) and genuine forward motion (dy >= 15px, dy > 0.5 * abs_dx, and not right-to-left)
-                                    in_road_corridor = (cy >= frame_h * 0.48) if is_coming_vehicle else (cy <= frame_h * 0.55)
-                                    valid_motion = (dy_tot >= 15.0 and dy_tot > 0.5 * abs_dx and dx_tot >= -2.0) if is_coming_vehicle else (tot_travel >= 12.0)
+                                    tr["globally_counted"] = True
+                                    if target_ln:
+                                        tr["counted_lines"].add(target_ln.name)
+                                        target_ln.in_count += 1
+                                        print(f"COUNTED_GULSHAN_ENTRY: tid={track_id}, cat={cat}, x0={x0_init:.1f}, cx={cx:.1f}, cy={cy:.1f}, dx={dx_tot:.1f}")
 
-                                    if in_road_corridor and valid_motion:
-                                        # Deduplication check against recently counted tracks (prevents double counts on ID switch / occlusion)
-                                        is_duplicate = False
-                                        for r_ev in recent_counted_vehicles:
-                                            if (frame_idx - r_ev["frame"]) <= 90:
-                                                d = ((cx - r_ev["cx"])**2 + (cy - r_ev["cy"])**2)**0.5
-                                                same_cat = (r_ev["cat"] == cat) or (r_ev["cat"] in HEAVY_CATEGORIES and cat in HEAVY_CATEGORIES) or (r_ev["cat"] in ["Car", "Microbus"] and cat in ["Car", "Microbus"])
-                                                if same_cat:
-                                                    if d < 140 or (r_ev.get("dir") == tr["direction"] and d < 190):
-                                                        is_duplicate = True
-                                                        break
+                                    categories_summary[cat] = categories_summary.get(cat, 0) + 1
+                                    recent_counted_vehicles.append({
+                                        "tid": track_id, "cat": cat, "cx": cx, "cy": cy,
+                                        "frame": frame_idx, "dir": "in", "box": box
+                                    })
+                                    if len(recent_counted_vehicles) > 250:
+                                        recent_counted_vehicles.pop(0)
 
-                                        if is_duplicate:
-                                            tr["globally_counted"] = True
-                                        else:
-                                            tr["globally_counted"] = True
-                                            target_ln = lines[0] if lines else None
-                                            if target_ln:
-                                                tr["counted_lines"].add(target_ln.name)
-                                                if is_going_vehicle:
-                                                    target_ln.out_count += 1
-                                                else:
-                                                    print(f"COUNTED_ONE: tid={track_id}, cat={cat}, x0={history[0][0]:.1f}, y0={history[0][1]:.1f}, cx={cx:.1f}, cy={cy:.1f}, dx={dx_tot:.1f}, dy={dy_tot:.1f}")
-                                                    target_ln.in_count += 1
+                        elif active_lane == "gulshan_mohakhali":
+                            # Target: ONLY vehicles from Gulshan road heading south towards Mohakhali
+                            target_ln = lines[0] if lines else None
+                            mx1 = target_ln.x1 if target_ln else int(frame_w * 0.65)
+                            my = target_ln.y1 if target_ln else int(frame_h * 0.48)
+                            mx2 = target_ln.x2 if target_ln else int(frame_w * 0.98)
 
-                                            categories_summary[cat] = categories_summary.get(cat, 0) + 1
-                                            recent_counted_vehicles.append({
-                                                "tid": track_id, "cat": cat, "cx": cx, "cy": cy,
-                                                "frame": frame_idx, "dir": tr["direction"], "box": box
-                                            })
-                                            if len(recent_counted_vehicles) > 250:
-                                                recent_counted_vehicles.pop(0)
+                            orig_gulshan = (x0_init >= frame_w * 0.60) and (y0_init <= frame_h * 0.50)
+                            is_southbound = (dy_tot >= 10.0) and (cy - p_prev[1] >= -1.0)
+                            in_mohakhali_corridor = (cx >= frame_w * 0.58)
+
+                            crossed_seg = segments_intersect(p_prev, p_curr, (mx1, my), (mx2, my))
+                            side_p = target_ln.signed_side(p_prev[0], p_prev[1]) if target_ln else -1
+                            side_c = target_ln.signed_side(cx, cy) if target_ln else 1
+                            side_crossed = (side_p * side_c < 0) and (target_ln.distance_to_segment(cx, cy) <= 65 if target_ln else False)
+                            box_crossed = box_intersects_segment(box, (mx1, my), (mx2, my))
+                            penetration_crossed = (p_prev[1] <= my + 8) and (cy >= my - 8)
+
+                            gate_reached = crossed_seg or side_crossed or box_crossed or penetration_crossed
+
+                            is_gulshan_to_mohakhali = orig_gulshan and is_southbound and in_mohakhali_corridor and gate_reached
+                            is_lane_disallowed = not is_gulshan_to_mohakhali
+
+                            if is_gulshan_to_mohakhali:
+                                is_duplicate = False
+                                d_thresh = max(45.0, 0.06 * frame_w)
+                                for r_ev in recent_counted_vehicles:
+                                    if (frame_idx - r_ev["frame"]) <= 50:
+                                        d = ((cx - r_ev["cx"])**2 + (cy - r_ev["cy"])**2)**0.5
+                                        same_cat = (r_ev["cat"] == cat) or (r_ev["cat"] in HEAVY_CATEGORIES and cat in HEAVY_CATEGORIES) or (r_ev["cat"] in ["Car", "Microbus"] and cat in ["Car", "Microbus"])
+                                        if same_cat and d < d_thresh:
+                                            is_duplicate = True
+                                            break
+
+                                if is_duplicate:
+                                    tr["globally_counted"] = True
+                                else:
+                                    tr["globally_counted"] = True
+                                    if target_ln:
+                                        tr["counted_lines"].add(target_ln.name)
+                                        target_ln.out_count += 1
+                                        print(f"COUNTED_MOHAKHALI: tid={track_id}, cat={cat}, y0={y0_init:.1f}, cy={cy:.1f}, dy={dy_tot:.1f}")
+
+                                    categories_summary[cat] = categories_summary.get(cat, 0) + 1
+                                    recent_counted_vehicles.append({
+                                        "tid": track_id, "cat": cat, "cx": cx, "cy": cy,
+                                        "frame": frame_idx, "dir": "out", "box": box
+                                    })
+                                    if len(recent_counted_vehicles) > 250:
+                                        recent_counted_vehicles.pop(0)
+
+                        else:
+                            # Standard direction and line counting
+                            if (not enable_in) and is_coming_vehicle:
+                                pass
+                            elif (not enable_out) and is_going_vehicle:
+                                pass
                             else:
-                                # ── TRADITIONAL LINE-CROSSING MODE ──
-                                # Check crossing against each line
-                                for ln in lines:
-                                    if tr.get("globally_counted"):
-                                        break
-
-                                    clean_name = ln.name.replace(" Line", "").strip()
-                                    # Skip lines disabled by user in UI
-                                    if enabled_lines is not None and len(enabled_lines) > 0:
-                                        if clean_name not in enabled_lines and ln.name not in enabled_lines and len(lines) > 1:
-                                            continue
-                                    if is_going_vehicle and enabled_lines_out is not None and len(enabled_lines_out) > 0:
-                                        if clean_name not in enabled_lines_out and ln.name not in enabled_lines_out and len(lines) > 1:
-                                            continue
+                                if is_smart_flow:
+                                    # ── SMART TRAJECTORY FLOW ENGINE (Zero Miss, No Line Touch Required) ──
+                                    # Side / lane filtering: check user-selected sides
+                                    side_allowed = True
+                                    veh_side = tr.get("flow_side", "South")
                                     if is_coming_vehicle and enabled_lines_in is not None and len(enabled_lines_in) > 0:
-                                        if clean_name not in enabled_lines_in and ln.name not in enabled_lines_in and len(lines) > 1:
-                                            continue
+                                        side_allowed = False
+                                        for al in enabled_lines_in:
+                                            al_low = al.strip().lower()
+                                            if al_low in veh_side.lower():
+                                                side_allowed = True
+                                                break
+                                    elif is_going_vehicle and enabled_lines_out is not None and len(enabled_lines_out) > 0:
+                                        side_allowed = False
+                                        for al in enabled_lines_out:
+                                            al_low = al.strip().lower()
+                                            if al_low in veh_side.lower():
+                                                side_allowed = True
+                                                break
 
-                                    # 1. Raycast segment intersection
-                                    crossed = segments_intersect(p_prev, p_curr, (ln.x1, ln.y1), (ln.x2, ln.y2))
+                                    if not side_allowed:
+                                        pass
+                                    else:
+                                        in_road_corridor = (cy >= frame_h * 0.48) if is_coming_vehicle else (cy <= frame_h * 0.55)
+                                        valid_motion = (dy_tot >= 15.0 and dy_tot > 0.5 * abs_dx and dx_tot >= -2.0) if is_coming_vehicle else (tot_travel >= 12.0)
 
-                                    # 2. Signed side change across line
-                                    side_p = ln.signed_side(p_prev[0], p_prev[1])
-                                    side_c = ln.signed_side(p_curr[0], p_curr[1])
-                                    if (side_p * side_c < 0) and ln.distance_to_segment(cx, cy) <= 65:
-                                        crossed = True
-
-                                    # 3. High-speed multi-frame leap check under frame stride
-                                    if len(history) >= 4:
-                                        side_old = ln.signed_side(history[-3][0], history[-3][1])
-                                        if (side_old * side_c < 0) and ln.distance_to_segment(cx, cy) <= 75:
-                                            crossed = True
-
-                                    # 4. Bounding box edge crossing
-                                    if not crossed and box_intersects_segment(box, (ln.x1, ln.y1), (ln.x2, ln.y2)) and ln.distance_to_segment(cx, cy) <= 50:
-                                        crossed = True
-
-                                    if crossed:
-                                        # Deduplication check against recently counted tracks
-                                        is_duplicate = False
-                                        for r_ev in recent_counted_vehicles:
-                                            if (frame_idx - r_ev["frame"]) <= 90:
-                                                d = ((cx - r_ev["cx"])**2 + (cy - r_ev["cy"])**2)**0.5
-                                                same_cat = (r_ev["cat"] == cat) or (r_ev["cat"] in HEAVY_CATEGORIES and cat in HEAVY_CATEGORIES) or (r_ev["cat"] in ["Car", "Microbus"] and cat in ["Car", "Microbus"])
-                                                if same_cat:
-                                                    if d < 180 or (r_ev["dir"] == tr["direction"] and d < 220):
+                                        if in_road_corridor and valid_motion:
+                                            is_duplicate = False
+                                            for r_ev in recent_counted_vehicles:
+                                                if (frame_idx - r_ev["frame"]) <= 90:
+                                                    d = ((cx - r_ev["cx"])**2 + (cy - r_ev["cy"])**2)**0.5
+                                                    same_cat = (r_ev["cat"] == cat) or (r_ev["cat"] in HEAVY_CATEGORIES and cat in HEAVY_CATEGORIES) or (r_ev["cat"] in ["Car", "Microbus"] and cat in ["Car", "Microbus"])
+                                                    if same_cat and d < 140:
                                                         is_duplicate = True
                                                         break
 
-                                        if is_duplicate:
-                                            tr["globally_counted"] = True
-                                        else:
-                                            tr["globally_counted"] = True
-                                            tr["counted_lines"].add(ln.name)
-                                            if is_going_vehicle:
-                                                ln.out_count += 1
+                                            if is_duplicate:
+                                                tr["globally_counted"] = True
                                             else:
-                                                ln.in_count += 1
+                                                tr["globally_counted"] = True
+                                                target_ln = lines[0] if lines else None
+                                                if target_ln:
+                                                    tr["counted_lines"].add(target_ln.name)
+                                                    if is_going_vehicle:
+                                                        target_ln.out_count += 1
+                                                    else:
+                                                        target_ln.in_count += 1
 
-                                            categories_summary[cat] = categories_summary.get(cat, 0) + 1
-                                            recent_counted_vehicles.append({
-                                                "tid": track_id, "cat": cat, "cx": cx, "cy": cy,
-                                                "frame": frame_idx, "dir": tr["direction"], "box": box
-                                            })
-                                            if len(recent_counted_vehicles) > 200:
-                                                recent_counted_vehicles.pop(0)
-
-                                            if needs_vis:
-                                                cv2.line(frame, (ln.x1, ln.y1), (ln.x2, ln.y2), (0, 255, 0), 5)
-
+                                                categories_summary[cat] = categories_summary.get(cat, 0) + 1
+                                                recent_counted_vehicles.append({
+                                                    "tid": track_id, "cat": cat, "cx": cx, "cy": cy,
+                                                    "frame": frame_idx, "dir": tr["direction"], "box": box
+                                                })
+                                                if len(recent_counted_vehicles) > 250:
+                                                    recent_counted_vehicles.pop(0)
+                                else:
+                                    # ── TRADITIONAL LINE-CROSSING MODE ──
+                                    # Check crossing against each line
+                                    for ln in lines:
+                                        if is_lane_disallowed:
+                                            break
+                                        if tr.get("globally_counted"):
+                                            break
+    
+                                        clean_name = ln.name.replace(" Line", "").strip()
+                                        # Skip lines disabled by user in UI
+                                        if enabled_lines is not None and len(enabled_lines) > 0:
+                                            if clean_name not in enabled_lines and ln.name not in enabled_lines and len(lines) > 1:
+                                                continue
+                                        if is_going_vehicle and enabled_lines_out is not None and len(enabled_lines_out) > 0:
+                                            if clean_name not in enabled_lines_out and ln.name not in enabled_lines_out and len(lines) > 1:
+                                                continue
+                                        if is_coming_vehicle and enabled_lines_in is not None and len(enabled_lines_in) > 0:
+                                            if clean_name not in enabled_lines_in and ln.name not in enabled_lines_in and len(lines) > 1:
+                                                continue
+    
+                                        # 1. Raycast segment intersection
+                                        crossed = segments_intersect(p_prev, p_curr, (ln.x1, ln.y1), (ln.x2, ln.y2))
+    
+                                        # 2. Signed side change across line
+                                        side_p = ln.signed_side(p_prev[0], p_prev[1])
+                                        side_c = ln.signed_side(p_curr[0], p_curr[1])
+                                        if (side_p * side_c < 0) and ln.distance_to_segment(cx, cy) <= 65:
+                                            crossed = True
+    
+                                        # 3. High-speed multi-frame leap check under frame stride
+                                        if len(history) >= 4:
+                                            side_old = ln.signed_side(history[-3][0], history[-3][1])
+                                            if (side_old * side_c < 0) and ln.distance_to_segment(cx, cy) <= 75:
+                                                crossed = True
+    
+                                        # 4. Bounding box edge crossing
+                                        if not crossed and box_intersects_segment(box, (ln.x1, ln.y1), (ln.x2, ln.y2)) and ln.distance_to_segment(cx, cy) <= 50:
+                                            crossed = True
+    
+                                        if crossed:
+                                            # Deduplication check against recently counted tracks
+                                            is_duplicate = False
+                                            for r_ev in recent_counted_vehicles:
+                                                if (frame_idx - r_ev["frame"]) <= 90:
+                                                    d = ((cx - r_ev["cx"])**2 + (cy - r_ev["cy"])**2)**0.5
+                                                    same_cat = (r_ev["cat"] == cat) or (r_ev["cat"] in HEAVY_CATEGORIES and cat in HEAVY_CATEGORIES) or (r_ev["cat"] in ["Car", "Microbus"] and cat in ["Car", "Microbus"])
+                                                    if same_cat:
+                                                        if d < 180 or (r_ev["dir"] == tr["direction"] and d < 220):
+                                                            is_duplicate = True
+                                                            break
+    
+                                            if is_duplicate:
+                                                tr["globally_counted"] = True
+                                            else:
+                                                tr["globally_counted"] = True
+                                                tr["counted_lines"].add(ln.name)
+                                                if is_going_vehicle:
+                                                    ln.out_count += 1
+                                                else:
+                                                    ln.in_count += 1
+    
+                                                categories_summary[cat] = categories_summary.get(cat, 0) + 1
+                                                recent_counted_vehicles.append({
+                                                    "tid": track_id, "cat": cat, "cx": cx, "cy": cy,
+                                                    "frame": frame_idx, "dir": tr["direction"], "box": box
+                                                })
+                                                if len(recent_counted_vehicles) > 200:
+                                                    recent_counted_vehicles.pop(0)
+    
+                                                if needs_vis:
+                                                    cv2.line(frame, (ln.x1, ln.y1), (ln.x2, ln.y2), (0, 255, 0), 5)
+    
                 if needs_vis:
                     # ── Direction labeling and Box Color Engine ──
                     locked_dir = tr.get("direction", "going")
@@ -747,10 +922,45 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                                 disallowed_side = False
                                 break
 
+                    # Check active lane status
+                    active_lane = str(job.get("active_lane", "banani_gulshan")).strip().lower()
+                    x0_init = history[0][0]
+                    y0_init = history[0][1]
+                    dx_tot = cx - x0_init
+                    dy_tot = cy - y0_init
+                    abs_dx = abs(dx_tot)
+                    abs_dy = abs(dy_tot)
+
+                    if active_lane == "banani_gulshan":
+                        orig_banani = (x0_init <= frame_w * 0.42) and (y0_init <= frame_h * 0.65)
+                        is_eastbound = (dx_tot >= 8.0) and (cx - history[-2][0] >= -1.0 if len(history) >= 2 else True)
+                        in_corridor = (int(frame_h * 0.22) <= cy <= int(frame_h * 0.65))
+                        is_straight_banani = (cy > frame_h * 0.65) or (dy_tot > 1.2 * max(1.0, abs_dx) and cy > frame_h * 0.48)
+
+                        is_candidate = orig_banani and is_eastbound and in_corridor and (not is_straight_banani) and (cx >= frame_w * 0.25)
+                        is_lane_disallowed = not (is_candidate or is_already_counted)
+                        lane_approaching = is_candidate and not is_already_counted
+                    elif active_lane == "gulshan_mohakhali":
+                        orig_gulshan = (x0_init >= frame_w * 0.60) and (y0_init <= frame_h * 0.50)
+                        is_southbound = (dy_tot >= 8.0)
+                        in_mohakhali_corridor = (cx >= frame_w * 0.58)
+                        is_candidate = orig_gulshan and is_southbound and in_mohakhali_corridor
+                        is_lane_disallowed = not (is_candidate or is_already_counted)
+                        lane_approaching = is_candidate and not is_already_counted
+                    else:
+                        is_lane_disallowed = False
+                        lane_approaching = False
+
                     # ── Box Color Logic: Counted vehicles ALWAYS turn green! ──
                     if is_already_counted:
                         box_color    = (0, 255, 60)      # BRIGHT GREEN — COUNTED ✓
-                        status_label = "COUNTED"
+                        status_label = "COUNTED ✓"
+                    elif is_lane_disallowed:
+                        box_color    = (0, 0, 255)      # BRIGHT RED — uncountable lane (NOT COUNTING)
+                        status_label = "NOT COUNTING"
+                    elif lane_approaching:
+                        box_color    = (255, 220, 0)    # CYAN — candidate entering active lane
+                        status_label = "ENTERING GULSHAN" if active_lane == "banani_gulshan" else "TO MOHAKHALI"
                     elif not enable_in and is_coming:
                         box_color    = (0, 0, 255)      # BRIGHT RED — incoming (NOT COUNTING)
                         status_label = "NOT COUNTING"
@@ -760,12 +970,9 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                     elif disallowed_side:
                         box_color    = (0, 0, 255)      # BRIGHT RED — side not selected (NOT COUNTING)
                         status_label = "NOT COUNTING"
-                    elif is_going:
-                        box_color    = (255, 220, 0)    # CYAN — outgoing active
-                        status_label = "OUTGOING"
                     else:
-                        box_color    = (255, 220, 0)    # CYAN — incoming active
-                        status_label = "INCOMING"
+                        box_color    = (0, 0, 255)      # BRIGHT RED — any other non-candidate
+                        status_label = "NOT COUNTING"
 
                     cur_dir_mode = job.get("direction_mode", "COMING_GOING")
                     if cur_dir_mode == "FORWARD_BACKWARD":
@@ -804,17 +1011,22 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
 
         # Compute total_count dynamically based ONLY on active enabled rules
         total_count = 0
-        for ln in lines:
-            clean_name = ln.name.replace(" Line", "").strip()
-            if count_scope_mode == "all_road":
-                total_count += (ln.in_count + ln.out_count)
-            else:
-                if enable_in:
-                    if enabled_lines_in is None or len(enabled_lines_in) == 0 or clean_name in enabled_lines_in or ln.name in enabled_lines_in or len(lines) == 1:
-                        total_count += ln.in_count
-                if enable_out:
-                    if enabled_lines_out is None or len(enabled_lines_out) == 0 or clean_name in enabled_lines_out or ln.name in enabled_lines_out or len(lines) == 1:
-                        total_count += ln.out_count
+        if active_lane == "banani_gulshan" and lines:
+            total_count = lines[0].in_count
+        elif active_lane == "gulshan_mohakhali" and lines:
+            total_count = lines[0].out_count
+        else:
+            for ln in lines:
+                clean_name = ln.name.replace(" Line", "").strip()
+                if count_scope_mode == "all_road":
+                    total_count += (ln.in_count + ln.out_count)
+                else:
+                    if enable_in:
+                        if enabled_lines_in is None or len(enabled_lines_in) == 0 or clean_name in enabled_lines_in or ln.name in enabled_lines_in or len(lines) == 1:
+                            total_count += ln.in_count
+                    if enable_out:
+                        if enabled_lines_out is None or len(enabled_lines_out) == 0 or clean_name in enabled_lines_out or ln.name in enabled_lines_out or len(lines) == 1:
+                            total_count += ln.out_count
 
         # Memory management & missed exit auditor
         if frame_idx % 60 == 0:
@@ -828,12 +1040,17 @@ def run_zero_fault_counter(video_source, job, lines=None, model_key="bnvd",
                 del track_data[k]
 
         if needs_vis:
-            # ─── Stats Overlay (bottom-left) ────────────────────────────────
+            lane_hdr = "BANANI TO GULSHAN [ACTIVE]" if active_lane == "banani_gulshan" else ("GULSHAN TO MOHAKHALI [ACTIVE]" if active_lane == "gulshan_mohakhali" else "ALL LANES")
             overlay_lines = [
-                (f"TOTAL COUNTED: {total_count}", (0, 255, 80), 0.90, 2),
+                (f"LANE: {lane_hdr}", (0, 230, 255), 0.65, 2),
+                (f"GULSHAN ENTERED: {total_count}" if active_lane == "banani_gulshan" else f"TOTAL COUNTED: {total_count}", (0, 255, 80), 0.88, 2),
             ]
             for i, ln in enumerate(lines):
-                if enable_in and not enable_out:
+                if active_lane == "banani_gulshan":
+                    overlay_lines.append((f"  Gulshan Entry Gate: {ln.in_count} counted [ACTIVE]", (0, 255, 80), 0.60, 2))
+                elif active_lane == "gulshan_mohakhali":
+                    overlay_lines.append((f"  Mohakhali Flow Gate: {ln.out_count} counted [ACTIVE]", (0, 255, 80), 0.60, 2))
+                elif enable_in and not enable_out:
                     in_lbl = f"  {ln.name}  IN(COMING): {ln.in_count} [ACTIVE]"
                     out_lbl = f"  {ln.name}  OUT(GOING): {ln.out_count} [OFF]"
                     overlay_lines.append((in_lbl, (0, 255, 80), 0.60, 2))

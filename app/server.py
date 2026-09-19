@@ -327,7 +327,16 @@ def job_worker(job_id, video_path, source_label):
         cap.release()
 
         from counter import CountingLine
-        if line_mode == "smart_flow":
+        active_lane = str(job.get("active_lane", "banani_gulshan")).strip().lower()
+        if active_lane == "banani_gulshan":
+            gx1, gy1 = int(frame_w * 0.39), int(frame_h * 0.28)
+            gx2, gy2 = int(frame_w * 0.43), int(frame_h * 0.62)
+            lines = [CountingLine("Gulshan Entry", gx1, gy1, gx2, gy2)]
+        elif active_lane == "gulshan_mohakhali":
+            mx1, my = int(frame_w * 0.65), int(frame_h * 0.48)
+            mx2 = int(frame_w * 0.98)
+            lines = [CountingLine("Mohakhali Flow", mx1, my, mx2, my)]
+        elif line_mode == "smart_flow":
             lines = [CountingLine("Traffic Flow", 0, int(frame_h * 0.50), frame_w, int(frame_h * 0.50))]
         elif line_mode == "horizontal":
             lines = default_lines(frame_w, frame_h)
@@ -719,6 +728,8 @@ def api_start():
     raw_out = request.form.get("enabled_lines_out", "")
     enabled_lines_out = [x.strip() for x in raw_out.split(",") if x.strip()] if raw_out else None
 
+    active_lane = request.form.get("active_lane", "banani_gulshan")
+
     job_id = uuid.uuid4().hex
     job = {
         "status": "starting",
@@ -733,6 +744,7 @@ def api_start():
         "total_frames": 0,
         "vid_stride": vid_stride,
         "line_mode": line_mode,
+        "active_lane": active_lane,
         "invert_direction": invert_direction,
         "enable_in": enable_in,
         "enable_out": enable_out,
@@ -771,6 +783,8 @@ def api_update_rules(job_id):
     if not job:
         return jsonify({"error": "Unknown job"}), 404
     data = request.get_json(silent=True) or {}
+    if "active_lane" in data:
+        job["active_lane"] = str(data["active_lane"])
     if "enable_in" in data:
         job["enable_in"] = bool(data["enable_in"])
     if "enable_out" in data:
@@ -867,6 +881,7 @@ def batch_worker(batch_id, video_list, settings):
             "total_frames": 0,
             "vid_stride": settings.get("vid_stride", 2),
             "line_mode": settings.get("line_mode", "smart_flow"),
+            "active_lane": settings.get("active_lane", "banani_gulshan"),
             "invert_direction": settings.get("invert_direction", False),
             "enable_in": settings.get("enable_in", True),
             "enable_out": settings.get("enable_out", True),
@@ -900,7 +915,16 @@ def batch_worker(batch_id, video_list, settings):
             cap.release()
 
             l_mode = job.get("line_mode", "smart_flow")
-            if l_mode == "smart_flow":
+            active_lane = str(job.get("active_lane", "banani_gulshan")).strip().lower()
+            if active_lane == "banani_gulshan":
+                gx1, gy1 = int(frame_w * 0.39), int(frame_h * 0.28)
+                gx2, gy2 = int(frame_w * 0.43), int(frame_h * 0.62)
+                lines = [CountingLine("Gulshan Entry", gx1, gy1, gx2, gy2)]
+            elif active_lane == "gulshan_mohakhali":
+                mx1, my = int(frame_w * 0.65), int(frame_h * 0.48)
+                mx2 = int(frame_w * 0.98)
+                lines = [CountingLine("Mohakhali Flow", mx1, my, mx2, my)]
+            elif l_mode == "smart_flow":
                 lines = [CountingLine("Traffic Flow", 0, int(frame_h * 0.50), frame_w, int(frame_h * 0.50))]
             elif l_mode == "horizontal":
                 lines = default_lines(frame_w, frame_h)
@@ -1110,9 +1134,12 @@ def api_batch_start():
     else:
         enabled_lines_out = None
 
+    active_lane = data.get("active_lane", "banani_gulshan")
+
     settings = {
         "vid_stride": vid_stride,
         "line_mode": line_mode,
+        "active_lane": active_lane,
         "invert_direction": invert_direction,
         "enable_in": enable_in,
         "enable_out": enable_out,
